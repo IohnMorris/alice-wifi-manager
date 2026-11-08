@@ -472,15 +472,26 @@ fn find_wpa_supplicant_pids() -> Vec<(i32, String)> {
         let Ok(raw) = fs::read(entry.path().join("cmdline")) else {
             continue;
         };
-        let cmdline = raw
+        let args = raw
             .split(|&b| b == 0)
             .filter(|part| !part.is_empty())
             .map(|part| String::from_utf8_lossy(part).into_owned())
-            .collect::<Vec<_>>()
-            .join(" ");
-        if cmdline.contains("wpa_supplicant") {
+            .collect::<Vec<_>>();
+        let cmdline = args.join(" ");
+        if is_wpa_supplicant_for_wlan0(&args) {
             result.push((pid, cmdline));
         }
+    }
+
+    fn is_wpa_supplicant_for_wlan0(args: &[String]) -> bool {
+        let executable = args.first().map(String::as_str).unwrap_or_default();
+        let is_wpa = executable.ends_with("/wpa_supplicant") || executable == "wpa_supplicant";
+        if !is_wpa {
+            return false;
+        }
+
+        args.windows(2)
+            .any(|pair| pair[0] == "-i" && pair[1] == WIFI_INTERFACE)
     }
     result
 }

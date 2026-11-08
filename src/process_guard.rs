@@ -3,6 +3,8 @@ use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
+const FROZEN_MARKER: &str = "/var/run/alice-wifi-manager.frozen";
+
 #[derive(Debug, Clone)]
 pub struct FrozenProcessReport {
     pub pid: i32,
@@ -36,15 +38,16 @@ pub fn find_conflicting_pids() -> Vec<(i32, String)> {
             continue;
         }
 
-        let cmdline = raw_cmd
-            .split(|&b| b == 0)
-            .filter(|s| !s.is_empty())
-            .map(|s| String::from_utf8_lossy(s).into_owned())
-            .collect::<Vec<String>>()
-            .join(" ");
-
-        let is_platformd = cmdline.contains("maind") && cmdline.contains("--platformd");
-        let is_dhcpcd = cmdline.contains("dhcpcd");
+        let args = command_args(&raw_cmd);
+        let cmdline = args.join(" ");
+        let is_platformd = args
+            .iter()
+            .any(|arg| arg.ends_with("/maind") || arg == "maind")
+            && args.iter().any(|arg| arg == "--platformd");
+        let is_dhcpcd = args
+            .first()
+            .map(|arg| arg.ends_with("/dhcpcd") || arg == "dhcpcd")
+            .unwrap_or(false);
 
         if is_platformd || is_dhcpcd {
             result.push((pid, cmdline));
@@ -129,6 +132,7 @@ pub fn freeze_all_conflicting_verified() -> Result<Vec<FrozenProcessReport>, Str
         ));
     }
 
+    write_frozen_marker(&reports);
     Ok(reports)
 }
 
@@ -141,7 +145,7 @@ pub fn freeze_all_conflicting() -> Vec<i32> {
 
 pub fn freeze_dhcpcd_only() {
     for (pid, cmdline) in find_conflicting_pids() {
-        if cmdline.contains("dhcpcd") {
+        if is_dhcpcd_cmdline(&cmdline) {
             unsafe {
                 libc::kill(pid, libc::SIGSTOP);
             }
@@ -151,7 +155,7 @@ pub fn freeze_dhcpcd_only() {
 
 pub fn resume_dhcpcd_only() {
     for (pid, cmdline) in find_conflicting_pids() {
-        if cmdline.contains("dhcpcd") {
+        if is_dhcpcd_cmdline(&cmdline) {
             unsafe {
                 libc::kill(pid, libc::SIGCONT);
             }
@@ -160,29 +164,24 @@ pub fn resume_dhcpcd_only() {
 }
 
 pub fn ensure_all_resumed() {
-    for (pid, _cmdline) in find_conflicting_pids() {
-        unsafe {
-            libc::kill(pid, libc::SIGCONT);
-        }
-    }
+    let Ok(content) = fs::read_to_string(FROZEN_MARKER) else {
+        return;
+    };
 
-    if let Ok(entries) = fs::read_dir("/proc") {
-        for entry in entries.flatten() {
-            let Ok(pid) = entry.file_name().to_string_lossy().parse::<i32>() else {
-                continue;
-            };
-            let stat_path = entry.path().join("stat");
-            if let Ok(stat_str) = fs::read_to_string(stat_path) {
-                if (stat_str.contains("(maind)") || stat_str.contains("(dhcpcd)"))
-                    && stat_str.contains(") T ")
-                {
-                    unsafe {
-                        libc::kill(pid, libc::SIGCONT);
-                    }
-                }
+    for line in content.lines() {
+        let Some((pid_text, expected_cmdline)) = line.split_once('\t') else {
+            continue;
+        };
+        let Ok(pid) = pid_text.parse::<i32>() else {
+            continue;
+        };
+        if process_matches(pid, expected_cmdline) && read_proc_state(pid) == Some('T') {
+            unsafe {
+                libc::kill(pid, libc::SIGCONT);
             }
         }
     }
+    let _ = fs::remove_file(FROZEN_MARKER);
 }
 
 pub struct ProcessGuard {
@@ -201,6 +200,7 @@ impl ProcessGuard {
     pub fn release(&mut self) {
         if self.active {
             resume_reported_processes(&self.frozen);
+            clear_frozen_marker();
             self.active = false;
         }
     }
@@ -210,6 +210,7 @@ impl Drop for ProcessGuard {
     fn drop(&mut self) {
         if self.active {
             resume_reported_processes(&self.frozen);
+            clear_frozen_marker();
         }
     }
 }
@@ -232,13 +233,45 @@ fn process_matches(pid: i32, expected_cmdline: &str) -> bool {
     let Ok(raw) = fs::read(path) else {
         return false;
     };
-    let current = raw
-        .split(|&b| b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| String::from_utf8_lossy(s).into_owned())
-        .collect::<Vec<String>>()
-        .join(" ");
+    let current = command_args(&raw).join(" ");
     current == expected_cmdline
+}
+
+fn command_args(raw: &[u8]) -> Vec<String> {
+    raw.split(|&b| b == 0)
+        .filter(|part| !part.is_empty())
+        .map(|part| String::from_utf8_lossy(part).into_owned())
+        .collect()
+}
+
+fn is_dhcpcd_cmdline(cmdline: &str) -> bool {
+    cmdline
+        .split_whitespace()
+        .next()
+        .map(|arg| arg.ends_with("/dhcpcd") || arg == "dhcpcd")
+        .unwrap_or(false)
+}
+
+fn write_frozen_marker(processes: &[FrozenProcessReport]) {
+    let content = processes
+        .iter()
+        .filter(|process| process.stopped_by_manager)
+        .map(|process| format!("{}\t{}", process.pid, process.cmdline))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if content.is_empty() {
+        let _ = fs::remove_file(FROZEN_MARKER);
+        return;
+    }
+
+    let temporary = format!("{}.tmp", FROZEN_MARKER);
+    if fs::write(&temporary, format!("{}\n", content)).is_ok() {
+        let _ = fs::rename(temporary, FROZEN_MARKER);
+    }
+}
+
+fn clear_frozen_marker() {
+    let _ = fs::remove_file(FROZEN_MARKER);
 }
 
 pub fn is_platformd_stopped() -> bool {
