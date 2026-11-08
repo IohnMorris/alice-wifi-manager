@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-unknown-linux-musleabihf
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check ARMv7 target
+        run: cargo check --target armv7-unknown-linux-musleabihf
+      - name: Run tests
+        run: cargo test
+
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell scripts
+        run: |
+          set -eu
+          for file in scripts/*.sh; do
+            sh -n "$file"
+          done
+      - name: Validate embedded web page
+        run: test -s web/index.html

@@ -1,0 +1,16 @@
+/target/
+/artifacts/armv7/alice-wifi-manager
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local device data and credentials
+wpa_supplicant.conf
+**/wpa_supplicant.conf
+**/wpa_supplicant.conf.bak
+**/wpa_supplicant.conf.tmp

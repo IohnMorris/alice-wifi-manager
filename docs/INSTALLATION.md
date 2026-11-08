@@ -1,0 +1,29 @@
+# Установка
+
+Установка выполняется только при наличии рабочего канала к устройству:
+SSH по сети, ADB по сети или сервисный доступ. Обычный USB-доступ к Mini 2
+не предполагается.
+
+Перед заменой файлов необходимо сохранить:
+
+```text
+/bkupgrade/data/wpa_supplicant.conf
+/bkupgrade/data/wpa_supplicant.conf.bak
+/etc/init.d/S40wifi
+/usr/sbin/wpa_supplicant
+```
+
+Установка не должна удалять сохранённые Wi-Fi профили или менять штатный
+`S40wifi` без отдельной проверки.
+
+После установки проверить:
+
+```sh
+/usr/bin/alice-wifi-manager status
+ps | grep alice-wifi-manager
+test -S /var/run/alice-wifi-manager.sock
+```
+
+Аппаратная проверка обязательна: STA, AP, DHCP, DNS, HTTP и rollback должны
+быть проверены на реальной Mini 2 отдельно от host-сборки.
+

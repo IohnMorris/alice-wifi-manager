@@ -1,0 +1,26 @@
+name: ARMv7 build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-zigbuild
+      - name: Build ARMv7 release binary
+        run: cargo zigbuild --release --target armv7-unknown-linux-musleabihf
+      - name: Verify ELF
+        run: |
+          file target/armv7-unknown-linux-musleabihf/release/alice-wifi-manager
+          test "$(uname -s)" = "Linux"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alice-wifi-manager-armv7
+          path: target/armv7-unknown-linux-musleabihf/release/alice-wifi-manager
+

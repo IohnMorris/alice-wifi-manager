@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Alice WiFi Manager · Станция Мини 2</title>
+    <style>
+        :root {
+            --bg: #0b0c10;
+            --surface: #14161d;
+            --surface-hover: #1c1f29;
+            --border: rgba(255, 255, 255, 0.08);
+            --gold: #ffd700;
+            --gold-dim: rgba(255, 215, 0, 0.14);
+            --gold-border: rgba(255, 215, 0, 0.35);
+            --text: #f3f4f6;
+            --text-muted: #9ca3af;
+            --danger: #ef4444;
+            --danger-dim: rgba(239, 68, 68, 0.14);
+            --success: #10b981;
+            --success-dim: rgba(16, 185, 129, 0.14);
+            --radius: 16px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.45;
+            min-height: 100vh;
+            padding-bottom: 40px;
+        }
+
+        .container {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 16px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 4px 18px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-logo {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.22), rgba(255, 215, 0, 0.04));
+            border: 1px solid var(--gold-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--gold);
+            flex-shrink: 0;
+        }
+
+        .brand-title {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .brand-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Status Card */
+        .status-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+
+        .status-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: var(--gold-dim);
+            color: var(--gold);
+            border: 1px solid var(--gold-border);
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--gold);
+            box-shadow: 0 0 8px var(--gold);
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border);
+        }
+
+        .status-item-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 2px;
+        }
+
+        .status-item-val {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            word-break: break-all;
+        }
+
+        .status-actions {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        /* Alert Banner */
+        .alert-banner {
+            display: none;
+            background: var(--danger-dim);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+            padding: 12px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            margin-bottom: 16px;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .alert-banner.visible {
+            display: flex;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            background: var(--surface);
+            padding: 4px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            margin-bottom: 16px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 600;
+            padding: 10px 8px;
+            border-radius: 9px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn.active {
+            background: var(--gold);
+            color: #0b0c10;
+            box-shadow: 0 2px 10px rgba(255, 215, 0, 0.25);
+        }
+
+        /* Toolbar */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 9px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-gold {
+            background: var(--gold);
+            color: #0b0c10;
+            border-color: var(--gold);
+        }
+
+        .btn-outline-gold {
+            background: var(--gold-dim);
+            color: var(--gold);
+            border-color: var(--gold-border);
+        }
+
+        .btn-danger {
+            background: var(--danger-dim);
+            color: #fca5a5;
+            border-color: rgba(239, 68, 68, 0.35);
+        }
+
+        .btn-sm {
+            padding: 6px 10px;
+            font-size: 12px;
+            border-radius: 8px;
+        }
+
+        /* Network List & Cards */
+        .net-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .net-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            cursor: pointer;
+            transition: background 0.18s ease, border-color 0.18s ease;
+        }
+
+        .net-card:hover,
+        .net-card:active {
+            background: var(--surface-hover);
+            border-color: rgba(255, 215, 0, 0.25);
+        }
+
+        .net-card.primary-card {
+            border-color: var(--gold-border);
+        }
+
+        .net-card.unavailable-card {
+            cursor: default;
+            opacity: 0.72;
+        }
+
+        .net-card.unavailable-card:hover,
+        .net-card.unavailable-card:active {
+            background: var(--surface);
+            border-color: var(--border);
+        }
+
+        .net-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .signal-box {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            color: var(--gold);
+        }
+
+        .net-info {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .net-title-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 4px;
+        }
+
+        .net-ssid {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+
+        .net-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .badge {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        .badge-primary {
+            background: var(--gold);
+            color: #0b0c10;
+        }
+
+        .badge-saved {
+            background: rgba(255, 255, 255, 0.09);
+            color: var(--text);
+        }
+
+        .badge-band {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            font-weight: 500;
+        }
+
+        .saved-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 14px;
+        }
+
+        .saved-card.primary-card {
+            border-color: var(--gold-border);
+        }
+
+        .saved-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+        }
+
+        .saved-actions .btn {
+            position: relative;
+            z-index: 1;
+            pointer-events: auto;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 36px 20px;
+            background: var(--surface);
+            border: 1px dashed var(--border);
+            border-radius: var(--radius);
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* Modal / Bottom Sheet */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.72);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: flex-end;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .modal-backdrop.open {
+            display: flex;
+        }
+
+        #deleteConfirmModal {
+            z-index: 300;
+        }
+
+        .confirm-text {
+            color: var(--text-muted);
+            font-size: 14px;
+            margin-bottom: 18px;
+        }
+
+        .confirm-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .confirm-actions .btn {
+            flex: 1;
+        }
+
+        .app-message {
+            position: fixed;
+            left: 16px;
+            right: 16px;
+            bottom: 20px;
+            z-index: 400;
+            display: none;
+            padding: 13px 15px;
+            border-radius: 12px;
+            background: var(--surface);
+            border: 1px solid rgba(239, 68, 68, 0.45);
+            color: #fca5a5;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+            font-size: 14px;
+        }
+
+        .app-message.visible {
+            display: block;
+        }
+
+        .modal-sheet {
+            width: 100%;
+            max-width: 480px;
+            background: #171922;
+            border-top: 1px solid var(--gold-border);
+            border-radius: 22px 22px 0 0;
+            padding: 22px 18px 28px;
+            animation: slideUp 0.22s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100%);
+            }
+
+            to {
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .modal-title {
+            font-size: 17px;
+            font-weight: 700;
+        }
+
+        .close-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: none;
+            color: var(--text-muted);
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .input-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .form-input {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 11px;
+            padding: 12px 42px 12px 14px;
+            color: var(--text);
+            font-size: 15px;
+            outline: none;
+        }
+
+        .form-input:focus {
+            border-color: var(--gold);
+        }
+
+        .pwd-toggle {
+            position: absolute;
+            right: 10px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+        }
+
+        .unsupported-warn {
+            background: var(--danger-dim);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            color: #fca5a5;
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 13px;
+            margin-bottom: 14px;
+            display: none;
+        }
+
+        /* 20-second Connection Overlay */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(11, 12, 16, 0.92);
+            backdrop-filter: blur(6px);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            text-align: center;
+            z-index: 200;
+        }
+
+        .overlay.active {
+            display: flex;
+        }
+
+        .timer-circle {
+            width: 84px;
+            height: 84px;
+            border-radius: 50%;
+            border: 3px solid var(--gold);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--gold);
+            margin-bottom: 18px;
+            box-shadow: 0 0 25px rgba(255, 215, 0, 0.2);
+        }
+
+        .overlay-title {
+            font-size: 19px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .overlay-desc {
+            font-size: 14px;
+            color: var(--text-muted);
+            max-width: 340px;
+            margin-bottom: 20px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <!-- Шапка -->
+        <header class="header">
+            <div class="brand">
+                <div class="brand-logo">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                        <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                        <line x1="12" y1="20" x2="12.01" y2="20"></line>
+                    </svg>
+                </div>
+                <div>
+                    <div class="brand-title">Alice WiFi Manager</div>
+                    <div class="brand-sub">Яндекс Станция Мини 2</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Баннер ошибки последней попытки подключения -->
+        <div id="errorBanner" class="alert-banner">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="flex-shrink:0;margin-top:1px;">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <div id="errorBannerText"></div>
+        </div>
+
+        <!-- Карточка текущего статуса -->
+        <section class="status-card">
+            <div class="status-top">
+                <span class="status-pill">
+                    <span class="status-dot"></span>
+                    <span id="statusModeLabel">Режим настройки (AP)</span>
+                </span>
+                <span style="font-size:12px;color:var(--text-muted);" id="statusIpLabel">192.168.4.1</span>
+            </div>
+            <div class="status-grid">
+                <div>
+                    <div class="status-item-label">★ Основная сеть</div>
+                    <div class="status-item-val" id="primarySsidLabel">Не выбрана</div>
+                </div>
+                <div>
+                    <div class="status-item-label">Точка доступа</div>
+                    <div class="status-item-val">Alice-Mini2-Setup</div>
+                </div>
+            </div>
+            <div class="status-actions" id="returnToPrimaryWrap" style="display:none;">
+                <button class="btn btn-sm" onclick="stopSetupMode()">
+                    Вернуться к основной сети
+                </button>
+            </div>
+        </section>
+
+        <!-- Переключатель разделов -->
+        <div class="tabs">
+            <button id="tabBtnScan" class="tab-btn active" onclick="switchTab('scan')">
+                Доступные сети
+            </button>
+            <button id="tabBtnSaved" class="tab-btn" onclick="switchTab('saved')">
+                Сохранённые (<span id="savedCountBadge">0</span>)
+            </button>
+        </div>
+
+        <!-- Раздел 1: Доступные сети в эфире -->
+        <section id="sectionScan">
+            <div class="toolbar">
+                <button id="btnScanRefresh" class="btn" onclick="triggerScan()">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                    <span id="scanBtnText">Обновить</span>
+                </button>
+                <button class="btn btn-outline-gold" onclick="openHiddenModal()">
+                    + Скрытая сеть
+                </button>
+            </div>
+            <div id="scanInfo" style="font-size:12px;color:var(--text-muted);margin:-4px 0 12px;"></div>
+
+            <div id="scanList" class="net-list"></div>
+        </section>
+
+        <!-- Раздел 2: Сохранённые сети -->
+        <section id="sectionSaved" class="hidden">
+            <div class="toolbar">
+                <span style="font-size:13px;color:var(--text-muted);">
+                    Профили в wpa_supplicant.conf
+                </span>
+                <button class="btn btn-outline-gold btn-sm" onclick="openHiddenModal()">
+                    + Добавить сеть
+                </button>
+            </div>
+            <div id="savedList" class="net-list"></div>
+        </section>
+    </div>
+
+    <!-- Модальное окно подключения к выбранной или скрытой сети -->
+    <div id="connectModal" class="modal-backdrop" onclick="handleBackdropClick(event)">
+        <div class="modal-sheet">
+            <div class="modal-header">
+                <div class="modal-title" id="modalTitle">Подключение к сети</div>
+                <button class="close-btn" onclick="closeModal()">×</button>
+            </div>
+
+            <div id="unsupportedWarn" class="unsupported-warn">
+                Эта сеть использует корпоративную аутентификацию WPA-Enterprise (802.1X), которая не поддерживается
+                колонкой.
+            </div>
+
+            <div id="hiddenSsidGroup" class="form-group hidden">
+                <label class="form-label">Название скрытой сети (SSID)</label>
+                <input type="text" id="inputSsid" class="form-input" placeholder="Введите точный SSID"
+                    autocomplete="off">
+            </div>
+
+            <div id="selectedNetMeta" style="font-size:13px;color:var(--text-muted);margin-bottom:14px;"></div>
+
+            <div id="passwordGroup" class="form-group">
+                <label class="form-label" id="passwordLabel">Пароль Wi-Fi</label>
+                <div class="input-wrap">
+                    <input type="password" id="inputPassword" class="form-input" placeholder="Минимум 8 символов"
+                        autocomplete="off">
+                    <button type="button" class="pwd-toggle" onclick="togglePasswordVisibility()"
+                        title="Показать/скрыть пароль">
+                        <svg id="eyeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <button id="btnSubmitConnect" class="btn btn-gold" style="width:100%;padding:13px;font-size:15px;"
+                onclick="submitConnect()">
+                Подключить и сделать основной
+            </button>
+        </div>
+    </div>
+
+    <div id="deleteConfirmModal" class="modal-backdrop" onclick="handleDeleteBackdropClick(event)">
+        <div class="modal-sheet">
+            <div class="modal-header">
+                <div class="modal-title">Удалить сеть?</div>
+                <button type="button" class="close-btn" onclick="closeDeleteConfirm()">×</button>
+            </div>
+            <div id="deleteConfirmText" class="confirm-text"></div>
+            <div class="confirm-actions">
+                <button type="button" class="btn" onclick="closeDeleteConfirm()">Отмена</button>
+                <button type="button" class="btn btn-danger" onclick="confirmDeleteSavedNetwork()">Удалить</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="appMessage" class="app-message"></div>
+
+    <!-- Экран ожидания 20-секундной транзакции -->
+    <div id="txOverlay" class="overlay">
+        <div id="txTimerCircle" class="timer-circle">20</div>
+        <div id="txTitle" class="overlay-title">Проверка подключения…</div>
+        <div id="txDesc" class="overlay-desc">
+            Колонка временно отключила точку доступа и подключается к выбранной сети. Подождите до 20 секунд.
+        </div>
+        <button id="txCloseBtn" class="btn btn-gold hidden" onclick="closeTxOverlay()">
+            Понятно
+        </button>
+    </div>
+
+    <script>
+        let scannedNetworks = [];
+        let savedNetworks = [];
+        let currentModalNet = null;
+        let isHiddenMode = false;
+        let txInterval = null;
+        let pendingDelete = null;
+        let messageTimer = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshAll();
+        });
+
+        async function refreshAll() {
+            await Promise.all([loadStatus(), loadScannedNetworks(), loadSavedNetworks()]);
+        }
+
+        async function loadStatus() {
+            try {
+                const res = await fetch('/api/status', { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+
+                document.getElementById('statusModeLabel').textContent =
+                    data.mode === 'AP' ? 'Режим настройки (AP)' : 'Подключено (STA)';
+                document.getElementById('statusIpLabel').textContent = data.ip_address || '192.168.4.1';
+                document.getElementById('primarySsidLabel').textContent = data.primary_ssid || 'Не назначена';
+
+                const returnWrap = document.getElementById('returnToPrimaryWrap');
+                returnWrap.style.display = data.primary_ssid ? 'flex' : 'none';
+
+                const scanButton = document.getElementById('btnScanRefresh');
+                const scanInfo = document.getElementById('scanInfo');
+                if (data.mode === 'AP') {
+                    scanButton.disabled = false;
+                    scanInfo.textContent =
+                        'Список сетей получен перед запуском точки доступа. Live-сканирование временно недоступно в AP-режиме.';
+                } else {
+                    scanInfo.textContent = '';
+                }
+
+                const banner = document.getElementById('errorBanner');
+                const bannerText = document.getElementById('errorBannerText');
+                if (data.last_error) {
+                    bannerText.textContent = data.last_error;
+                    banner.classList.add('visible');
+                } else {
+                    banner.classList.remove('visible');
+                }
+            } catch (_) { }
+        }
+
+        async function loadScannedNetworks() {
+            try {
+                const res = await fetch('/api/networks', { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                scannedNetworks = data.networks || [];
+                renderScannedList();
+            } catch (_) { }
+        }
+
+        async function loadSavedNetworks() {
+            try {
+                const res = await fetch('/api/saved-networks', { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                savedNetworks = data.networks || [];
+                document.getElementById('savedCountBadge').textContent = savedNetworks.length;
+                renderSavedList();
+            } catch (_) { }
+        }
+
+        function switchTab(tab) {
+            const isScan = tab === 'scan';
+            document.getElementById('tabBtnScan').classList.toggle('active', isScan);
+            document.getElementById('tabBtnSaved').classList.toggle('active', !isScan);
+            document.getElementById('sectionScan').classList.toggle('hidden', !isScan);
+            document.getElementById('sectionSaved').classList.toggle('hidden', isScan);
+        }
+
+        function renderSignalSvg(bars) {
+            const b1 = bars >= 1 ? 'var(--gold)' : 'rgba(255,255,255,0.18)';
+            const b2 = bars >= 2 ? 'var(--gold)' : 'rgba(255,255,255,0.18)';
+            const b3 = bars >= 3 ? 'var(--gold)' : 'rgba(255,255,255,0.18)';
+            const b4 = bars >= 4 ? 'var(--gold)' : 'rgba(255,255,255,0.18)';
+            return `
+      <svg width="20" height="20" viewBox="0 0 20 20">
+        <rect x="2" y="13" width="3" height="5" rx="1" fill="${b1}"></rect>
+        <rect x="6.5" y="10" width="3" height="8" rx="1" fill="${b2}"></rect>
+        <rect x="11" y="6.5" width="3" height="11.5" rx="1" fill="${b3}"></rect>
+        <rect x="15.5" y="3" width="3" height="15" rx="1" fill="${b4}"></rect>
+      </svg>
+    `;
+        }
+
+        function renderLockSvg(security) {
+            if (security === 'Открытая' || security === 'NONE') {
+                return '';
+            }
+            return `
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-1px;">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+    `;
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function renderScannedList() {
+            const container = document.getElementById('scanList');
+            if (!scannedNetworks.length) {
+                container.innerHTML = `
+        <div class="empty-state">
+          Доступные Wi-Fi сети не найдены.<br>Нажмите «Обновить» или добавьте скрытую сеть вручную.
+        </div>
+      `;
+                return;
+            }
+
+            container.innerHTML = scannedNetworks.map((net, idx) => {
+                let statusBadge = '';
+                if (net.is_primary) {
+                    statusBadge = `<span class="badge badge-primary">★ Основная</span>`;
+                } else if (net.is_saved) {
+                    statusBadge = `<span class="badge badge-saved">Сохранена</span>`;
+                }
+                const availabilityBadge = net.available
+                    ? ''
+                    : `<span class="badge badge-band">Не найдена сейчас</span>`;
+                const cardAction = net.available && net.supported
+                    ? `onclick="openNetworkModal(${idx})"`
+                    : '';
+                const cardClass = net.available && net.supported ? '' : ' unavailable-card';
+                const signal = net.available
+                    ? renderSignalSvg(net.signal_bars)
+                    : '<span style="font-size:18px;color:var(--text-muted);">—</span>';
+                const meta = net.available
+                    ? `<span class="badge badge-band">${escapeHtml(net.band)}</span>
+                       <span>${renderLockSvg(net.security)} ${escapeHtml(net.security)}</span>
+                       <span>${net.signal_dbm} дБм</span>`
+                    : `<span>${escapeHtml(net.security)}</span><span>Нет в текущем сканировании</span>`;
+
+                return `
+        <div class="net-card ${net.is_primary ? 'primary-card' : ''}${cardClass}" ${cardAction}>
+          <div class="net-left">
+            <div class="signal-box">
+              ${signal}
+            </div>
+            <div class="net-info">
+              <div class="net-title-row">
+                <span class="net-ssid">${escapeHtml(net.ssid)}</span>
+                ${statusBadge}
+                ${availabilityBadge}
+              </div>
+              <div class="net-meta">
+                ${meta}
+              </div>
+            </div>
+          </div>
+          <div style="color:var(--text-muted);font-size:18px;">${net.available && net.supported ? '›' : ''}</div>
+        </div>
+      `;
+            }).join('');
+        }
+
+        function renderSavedList() {
+            const container = document.getElementById('savedList');
+            if (!savedNetworks.length) {
+                container.innerHTML = `
+        <div class="empty-state">
+          Список сохранённых сетей пуст. Выберите сеть из эфира, чтобы добавить её.
+        </div>
+      `;
+                return;
+            }
+
+            container.innerHTML = savedNetworks.map(net => {
+                const badge = net.is_primary
+                    ? `<span class="badge badge-primary">★ Основная сеть</span>`
+                    : `<span class="badge badge-saved">Резервная (disabled=1)</span>`;
+
+                const makePrimaryBtn = !net.is_primary
+                    ? `<button class="btn btn-gold btn-sm" onclick="makeSavedPrimary(${net.id}, '${escapeJs(net.ssid)}')">Сделать основной</button>`
+                    : `<button class="btn btn-outline-gold btn-sm" onclick="makeSavedPrimary(${net.id}, '${escapeJs(net.ssid)}')">Подключить</button>`;
+
+                return `
+        <div class="saved-card ${net.is_primary ? 'primary-card' : ''}">
+          <div class="net-title-row" style="justify-content:space-between;">
+            <span class="net-ssid">${escapeHtml(net.ssid)}</span>
+            ${badge}
+          </div>
+          <div class="net-meta" style="margin-top:4px;">
+            <span>Защита: ${escapeHtml(net.key_mgmt)}</span>
+          </div>
+          <div class="saved-actions">
+            ${makePrimaryBtn}
+            <button type="button" class="btn btn-danger btn-sm" data-delete-network-id="${net.id}"
+              onclick="openDeleteConfirm(${net.id}, this); return false;">Удалить</button>
+          </div>
+        </div>
+      `;
+            }).join('');
+
+        }
+
+        function escapeJs(str) {
+            return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
+        async function triggerScan() {
+            const btn = document.getElementById('btnScanRefresh');
+            const txt = document.getElementById('scanBtnText');
+            const info = document.getElementById('scanInfo');
+            btn.disabled = true;
+            txt.textContent = 'Сканирование…';
+            try {
+                const res = await fetch('/api/scan', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) {
+                    info.textContent = data.error || 'Сканирование не удалось выполнить.';
+                } else if (data.refreshed === false) {
+                    info.textContent = data.message || 'Показан предварительный список сетей.';
+                } else {
+                    info.textContent = `Найдено сетей: ${data.count || 0}`;
+                    await loadScannedNetworks();
+                }
+            } catch (_) {
+                info.textContent = 'Не удалось получить результат сканирования.';
+            } finally {
+                btn.disabled = false;
+                txt.textContent = 'Обновить';
+            }
+        }
+
+        function openNetworkModal(index) {
+            const net = scannedNetworks[index];
+            if (!net) return;
+            currentModalNet = net;
+            isHiddenMode = false;
+
+            document.getElementById('modalTitle').textContent = net.ssid;
+            document.getElementById('hiddenSsidGroup').classList.add('hidden');
+            document.getElementById('selectedNetMeta').textContent =
+                `Диапазон: ${net.band} · Защита: ${net.security} · Сигнал: ${net.signal_dbm} дБм`;
+
+            const warn = document.getElementById('unsupportedWarn');
+            const pwdGroup = document.getElementById('passwordGroup');
+            const submitBtn = document.getElementById('btnSubmitConnect');
+            const pwdInput = document.getElementById('inputPassword');
+            const pwdLabel = document.getElementById('passwordLabel');
+
+            pwdInput.value = '';
+            pwdInput.type = 'password';
+
+            if (!net.supported) {
+                warn.style.display = 'block';
+                pwdGroup.classList.add('hidden');
+                submitBtn.disabled = true;
+            } else {
+                warn.style.display = 'none';
+                submitBtn.disabled = false;
+                if (net.security === 'Открытая') {
+                    pwdGroup.classList.add('hidden');
+                } else {
+                    pwdGroup.classList.remove('hidden');
+                    pwdLabel.textContent = net.is_saved
+                        ? 'Пароль Wi-Fi (оставьте пустым, чтобы использовать сохранённый)'
+                        : 'Пароль Wi-Fi';
+                    pwdInput.placeholder = net.is_saved
+                        ? 'Используется сохранённый пароль'
+                        : 'Минимум 8 символов';
+                }
+            }
+
+            document.getElementById('connectModal').classList.add('open');
+        }
+
+        function openHiddenModal() {
+            currentModalNet = null;
+            isHiddenMode = true;
+
+            document.getElementById('modalTitle').textContent = 'Скрытая Wi-Fi сеть';
+            document.getElementById('hiddenSsidGroup').classList.remove('hidden');
+            document.getElementById('inputSsid').value = '';
+            document.getElementById('selectedNetMeta').textContent =
+                'Укажите точное имя сети и пароль (для открытой сети оставьте пароль пустым).';
+            document.getElementById('unsupportedWarn').style.display = 'none';
+
+            const pwdGroup = document.getElementById('passwordGroup');
+            pwdGroup.classList.remove('hidden');
+            document.getElementById('passwordLabel').textContent = 'Пароль Wi-Fi';
+            const pwdInput = document.getElementById('inputPassword');
+            pwdInput.value = '';
+            pwdInput.type = 'password';
+            pwdInput.placeholder = 'Минимум 8 символов (или пусто для открытой)';
+
+            document.getElementById('btnSubmitConnect').disabled = false;
+            document.getElementById('connectModal').classList.add('open');
+        }
+
+        function closeModal() {
+            document.getElementById('connectModal').classList.remove('open');
+        }
+
+        function handleBackdropClick(e) {
+            if (e.target.id === 'connectModal') {
+                closeModal();
+            }
+        }
+
+        function togglePasswordVisibility() {
+            const input = document.getElementById('inputPassword');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+
+        async function submitConnect() {
+            let ssid = '';
+            let hidden = false;
+            if (isHiddenMode) {
+                ssid = document.getElementById('inputSsid').value.trim();
+                hidden = true;
+                if (!ssid) {
+                    showAppMessage('Введите название сети (SSID)');
+                    return;
+                }
+            } else if (currentModalNet) {
+                ssid = currentModalNet.ssid;
+            }
+
+            const pwd = document.getElementById('inputPassword').value;
+            if (!isHiddenMode && currentModalNet && currentModalNet.security !== 'Открытая' && !currentModalNet.is_saved) {
+                if (pwd.length < 8) {
+                    showAppMessage('Пароль WPA2/WPA3 должен содержать не менее 8 символов');
+                    return;
+                }
+            }
+
+            closeModal();
+            startTransactionCountdown(ssid);
+
+            try {
+                const res = await fetch('/api/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ssid: ssid,
+                        password: pwd.length > 0 ? pwd : null,
+                        hidden: hidden
+                    })
+                });
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    stopTransactionCountdownWithError(errData.error || 'Ошибка запуска подключения');
+                }
+            } catch (_) {
+                // Потеря связи во время отправки запроса нормальна, т.к. колонка сбрасывает AP
+            }
+        }
+
+        async function makeSavedPrimary(id, ssid) {
+            startTransactionCountdown(ssid);
+            try {
+                const res = await fetch('/api/networks/primary', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id })
+                });
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    stopTransactionCountdownWithError(errData.error || 'Не удалось переключить сеть');
+                }
+            } catch (_) { }
+        }
+
+        function openDeleteConfirm(id, button) {
+            const network = savedNetworks.find(item => item.id === id);
+            const ssid = network ? network.ssid : `№${id}`;
+            pendingDelete = { id: id, button: button };
+            document.getElementById('deleteConfirmText').textContent =
+                `Сеть «${ssid}» будет удалена из сохранённых профилей.`;
+            document.getElementById('deleteConfirmModal').classList.add('open');
+        }
+
+        function closeDeleteConfirm() {
+            document.getElementById('deleteConfirmModal').classList.remove('open');
+            pendingDelete = null;
+        }
+
+        function handleDeleteBackdropClick(event) {
+            if (event.target.id === 'deleteConfirmModal') {
+                closeDeleteConfirm();
+            }
+        }
+
+        function confirmDeleteSavedNetwork() {
+            if (!pendingDelete) return;
+            const request = pendingDelete;
+            closeDeleteConfirm();
+            deleteSavedNetwork(request.id, request.button);
+        }
+
+        function showAppMessage(message) {
+            const element = document.getElementById('appMessage');
+            element.textContent = message;
+            element.classList.add('visible');
+            if (messageTimer) clearTimeout(messageTimer);
+            messageTimer = setTimeout(() => {
+                element.classList.remove('visible');
+            }, 4000);
+        }
+
+        async function deleteSavedNetwork(id, button) {
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Удаление…';
+            }
+            try {
+                const res = await fetch(`/api/networks/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    await refreshAll();
+                } else {
+                    const data = await res.json().catch(() => ({}));
+                    showAppMessage(data.error || 'Не удалось удалить сохранённую сеть');
+                    if (button) {
+                        button.disabled = false;
+                        button.textContent = 'Удалить';
+                    }
+                }
+            } catch (_) {
+                showAppMessage('Не удалось связаться с менеджером');
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = 'Удалить';
+                }
+            }
+        }
+
+        async function stopSetupMode() {
+            try {
+                await fetch('/api/setup/stop', { method: 'POST' });
+                document.getElementById('txOverlay').classList.add('active');
+                document.getElementById('txTimerCircle').textContent = '✓';
+                document.getElementById('txTitle').textContent = 'Точка доступа отключена';
+                document.getElementById('txDesc').textContent =
+                    'Колонка возвращается к работе в основной домашней сети.';
+            } catch (_) { }
+        }
+
+        function startTransactionCountdown(ssid) {
+            const overlay = document.getElementById('txOverlay');
+            const circle = document.getElementById('txTimerCircle');
+            const title = document.getElementById('txTitle');
+            const desc = document.getElementById('txDesc');
+            const closeBtn = document.getElementById('txCloseBtn');
+
+            overlay.classList.add('active');
+            closeBtn.classList.add('hidden');
+            let remaining = 20;
+            circle.textContent = remaining;
+            title.textContent = `Подключение к «${ssid}»…`;
+            desc.textContent =
+                'Колонка проверяет пароль и получает IP-адрес у роутера. При ошибке точка доступа включится обратно автоматически.';
+
+            if (txInterval) clearInterval(txInterval);
+
+            txInterval = setInterval(async () => {
+                remaining -= 1;
+                if (remaining >= 0) {
+                    circle.textContent = remaining;
+                }
+
+                // Начиная с 15-й секунды пробуем опросить /api/status:
+                // если точка доступа поднялась обратно из-за ошибки (Этап 3Б), сразу покажем причину.
+                if (remaining <= 15) {
+                    try {
+                        const controller = new AbortController();
+                        const t = setTimeout(() => controller.abort(), 1200);
+                        const res = await fetch('/api/status', {
+                            cache: 'no-store',
+                            signal: controller.signal
+                        });
+                        clearTimeout(t);
+                        if (res.ok) {
+                            const st = await res.json();
+                            if (st.last_result === 'failed') {
+                                clearInterval(txInterval);
+                                txInterval = null;
+                                await refreshAll();
+                                overlay.classList.remove('active');
+                                return;
+                            }
+                        }
+                    } catch (_) {
+                        // Если fetch не проходит — колонка либо ещё проверяет сеть, либо уже успешно подключилась к роутеру и отключила AP
+                    }
+                }
+
+                if (remaining <= 0) {
+                    clearInterval(txInterval);
+                    txInterval = null;
+                    circle.textContent = '✓';
+                    title.textContent = 'Завершение проверки';
+                    desc.textContent =
+                        'Если колонка успешно подключилась к домашнему роутеру, точка доступа Alice-Mini2-Setup больше не активна. Если пароль не подошёл, переподключитесь к Alice-Mini2-Setup.';
+                    closeBtn.classList.remove('hidden');
+                }
+            }, 1000);
+        }
+
+        function stopTransactionCountdownWithError(msg) {
+            if (txInterval) {
+                clearInterval(txInterval);
+                txInterval = null;
+            }
+            document.getElementById('txOverlay').classList.remove('active');
+            const banner = document.getElementById('errorBanner');
+            document.getElementById('errorBannerText').textContent = msg;
+            banner.classList.add('visible');
+        }
+
+        function closeTxOverlay() {
+            document.getElementById('txOverlay').classList.remove('active');
+            refreshAll();
+        }
+    </script>
+</body>
+
+</html>

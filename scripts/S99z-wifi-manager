@@ -1,0 +1,68 @@
+#!/bin/sh
+#
+# /etc/init.d/S99z-wifi-manager
+# BusyBox init script for Alice WiFi Manager (Yandex Station Mini 2)
+#
+
+DAEMON="/usr/bin/alice-wifi-manager"
+PIDFILE="/var/run/alice-wifi-manager.pid"
+LOGFILE="/var/log/alice-wifi-manager.log"
+
+[ -x "$DAEMON" ] || exit 0
+
+resume_system_daemons() {
+    for pid in $(pidof maind dhcpcd 2>/dev/null); do
+        kill -CONT "$pid" 2>/dev/null || true
+    done
+}
+
+start() {
+    printf "Starting alice-wifi-manager: "
+    resume_system_daemons
+    start-stop-daemon -S -q -b -m -p "$PIDFILE" -x "$DAEMON" -- daemon >>"$LOGFILE" 2>&1
+    if [ $? -eq 0 ]; then
+        echo "OK"
+    else
+        echo "FAIL"
+    fi
+}
+
+stop() {
+    printf "Stopping alice-wifi-manager: "
+    "$DAEMON" stop-ap >/dev/null 2>&1 || true
+    start-stop-daemon -K -q -p "$PIDFILE" 2>/dev/null || true
+    rm -f "$PIDFILE" /var/run/alice-wifi-manager.sock
+    resume_system_daemons
+    echo "OK"
+}
+
+restart() {
+    stop
+    sleep 1
+    start
+}
+
+status() {
+    "$DAEMON" status
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart|reload)
+        restart
+        ;;
+    status)
+        status
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+
+exit 0
