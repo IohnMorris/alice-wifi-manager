@@ -701,7 +701,7 @@ mod tests {
         assert!(!should_start_automatic_ap(
             Some(started),
             started + PRIMARY_WAIT_TIMEOUT,
-            Some(started + Duration::from_secs(5))
+            Some(started + PRIMARY_WAIT_TIMEOUT + Duration::from_secs(5))
         ));
     }
 }
