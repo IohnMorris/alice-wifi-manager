@@ -60,7 +60,7 @@ HTML обязательна новая сборка `alice-wifi-manager`.
 ```powershell
 cargo fmt -- --check
 cargo check --target armv7-unknown-linux-musleabihf
-cargo test
+cargo test --target x86_64-unknown-linux-gnu
 ```
 
 Release-сборка:
