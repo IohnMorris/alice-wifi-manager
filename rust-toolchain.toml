@@ -2,4 +2,4 @@
 channel = "1.99.1"
 targets = ["armv7-unknown-linux-musleabihf"]
 profile = "minimal"
-
+components = ["rustfmt"]

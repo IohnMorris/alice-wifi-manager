@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.1
       - uses: taiki-e/install-action@cargo-zigbuild
       - name: Require verified wpa_supplicant artifact
         env:
@@ -41,4 +41,3 @@ jobs:
           files: |
             alice-wifi-manager-${{ github.ref_name }}-armv7.tar.gz
             SHA256SUMS
-
