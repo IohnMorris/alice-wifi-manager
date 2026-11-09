@@ -16,9 +16,11 @@ done
 
 ssh "$USER@$HOST" 'set -eu
 mount -o remount,rw / 2>/dev/null || true
-/etc/init.d/S99z-wifi-manager stop 2>/dev/null || true
-rm -f /usr/bin/alice-wifi-manager /etc/init.d/S99z-wifi-manager /var/run/alice-wifi-manager.pid /var/run/alice-wifi-manager.sock
+if [ -x /usr/bin/alice-wifi-manager ]; then
+    /usr/bin/alice-wifi-manager uninstall --yes
+else
+    /etc/init.d/S99z-wifi-manager stop 2>/dev/null || true
+fi
 '
 
-echo "Manager files removed. Wi-Fi configuration and wpa_supplicant were preserved."
-
+echo "Manager removed. Recovery copy and Wi-Fi configuration were preserved."

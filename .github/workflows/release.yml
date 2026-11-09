@@ -39,10 +39,13 @@ jobs:
           cp scripts/S99z-wifi-manager dist/alice-wifi-manager/
           cp -r scripts docs README.md CHANGELOG.md dist/alice-wifi-manager/
           tar -C dist -czf "alice-wifi-manager-${GITHUB_REF_NAME}-armv7.tar.gz" alice-wifi-manager
-          sha256sum "alice-wifi-manager-${GITHUB_REF_NAME}-armv7.tar.gz" > SHA256SUMS
+          cp "alice-wifi-manager-${GITHUB_REF_NAME}-armv7.tar.gz" alice-wifi-manager-armv7.tar.gz
+          sha256sum "alice-wifi-manager-${GITHUB_REF_NAME}-armv7.tar.gz" \
+            alice-wifi-manager-armv7.tar.gz > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
             alice-wifi-manager-${{ github.ref_name }}-armv7.tar.gz
+            alice-wifi-manager-armv7.tar.gz
             SHA256SUMS

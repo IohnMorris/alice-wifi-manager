@@ -1,5 +1,34 @@
 # Alice WiFi Manager
 
+> **Важно:** проект пока протестирован только на **Яндекс Станции Mini 2**
+> с Buildroot Linux 4.9.68, ARMv7, `wlan0` и `sprdwl_ng`. Другие устройства не
+> гарантируются. Проект продолжает допиливаться; перед установкой сохраните
+> доступ по SSH и не отключайте колонку во время обновления.
+
+## Установка одной командой
+
+Если колонка уже доступна по SSH, на Linux/macOS выполните:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/IohnMorris/alice-wifi-manager/main/scripts/bootstrap.sh | sh -s -- --host 192.168.1.50
+```
+
+Для другого пользователя:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/IohnMorris/alice-wifi-manager/main/scripts/bootstrap.sh | sh -s -- --host 192.168.1.50 --user root
+```
+
+В Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/IohnMorris/alice-wifi-manager/main/scripts/bootstrap.ps1 -OutFile "$env:TEMP\alice-install.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\alice-install.ps1" -HostName 192.168.1.50
+```
+
+Команда скачивает последний ARMv7-релиз, проверяет SHA256 и устанавливает его
+по SSH. На устройстве сохраняется recovery-копия; существующие Wi-Fi
+конфигурации не удаляются.
+
 Автономный менеджер Wi-Fi для Яндекс Станции Mini 2. Проект управляет
 переключением STA/AP, сохранёнными профилями, DHCP/DNS, captive portal и
 мобильной страницей настройки.
@@ -105,6 +134,17 @@ Linux/macOS:
 ```powershell
 .\scripts\uninstall.ps1 -HostName 192.168.1.50
 ```
+
+Если SSH уже открыт прямо в терминале колонки:
+
+```sh
+/usr/bin/alice-wifi-manager uninstall --yes
+```
+
+Команда остановит менеджер, сохранит recovery-копию в
+`/bkupgrade/data/recovery-uninstall-*`, удалит только файлы менеджера и
+временный AP-конфиг. `wpa_supplicant`, основной Wi-Fi-конфиг и сохранённые
+сети не удаляются.
 
 ## CLI на устройстве
 

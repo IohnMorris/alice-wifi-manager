@@ -9,9 +9,11 @@ mod wpa_ctrl;
 
 use state_machine::{SharedManagerState, CLI_CONTROL_SOCKET};
 use std::env;
+use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -144,6 +146,79 @@ fn run_diag_ap() -> Result<(), String> {
     }
 }
 
+fn run_uninstall(args: &[String]) -> Result<(), String> {
+    if !args.iter().any(|arg| arg == "--yes") {
+        return Err("Refusing to uninstall without confirmation. Re-run: \
+             alice-wifi-manager uninstall --yes"
+            .to_string());
+    }
+
+    if unsafe { libc::geteuid() } != 0 {
+        return Err("uninstall must be run as root".to_string());
+    }
+
+    const RECOVERY_ROOT: &str = "/bkupgrade/data";
+    let stamp = format!(
+        "recovery-uninstall-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to read system time: {}", e))?
+            .as_secs()
+    );
+    let recovery_dir = Path::new(RECOVERY_ROOT).join(stamp);
+    fs::create_dir_all(&recovery_dir)
+        .map_err(|e| format!("Failed to create recovery directory: {}", e))?;
+
+    for source in [
+        "/usr/bin/alice-wifi-manager",
+        "/etc/init.d/S99z-wifi-manager",
+        "/usr/sbin/wpa_supplicant",
+        "/bkupgrade/data/wpa_supplicant.conf",
+        "/bkupgrade/data/wpa_supplicant.conf.bak",
+        "/bkupgrade/data/wpa_supplicant.ap.conf",
+    ] {
+        if Path::new(source).exists() {
+            let destination = recovery_dir.join(
+                Path::new(source)
+                    .file_name()
+                    .ok_or_else(|| format!("Invalid recovery path: {}", source))?,
+            );
+            fs::copy(source, destination)
+                .map_err(|e| format!("Failed to preserve {}: {}", source, e))?;
+        }
+    }
+
+    let stop_status = Command::new("/etc/init.d/S99z-wifi-manager")
+        .arg("stop")
+        .status()
+        .map_err(|e| format!("Failed to stop manager: {}", e))?;
+    if !stop_status.success() {
+        return Err(format!(
+            "Manager stop failed; nothing was removed. Recovery: {}",
+            recovery_dir.display()
+        ));
+    }
+
+    process_guard::ensure_all_resumed();
+    for path in [
+        "/usr/bin/alice-wifi-manager",
+        "/etc/init.d/S99z-wifi-manager",
+        "/var/run/alice-wifi-manager.pid",
+        "/var/run/alice-wifi-manager.sock",
+        "/bkupgrade/data/wpa_supplicant.ap.conf",
+    ] {
+        if Path::new(path).exists() {
+            fs::remove_file(path).map_err(|e| format!("Failed to remove {}: {}", path, e))?;
+        }
+    }
+
+    println!(
+        "Manager removed. Wi-Fi profiles and wpa_supplicant were preserved.\nRecovery: {}",
+        recovery_dir.display()
+    );
+    Ok(())
+}
+
 fn print_usage() {
     println!("Alice WiFi Manager v2.1 (Yandex Station Mini 2)");
     println!("Usage:");
@@ -152,6 +227,7 @@ fn print_usage() {
     println!("  alice-wifi-manager stop-ap    Stop Access Point and return to primary Wi-Fi");
     println!("  alice-wifi-manager status     Show connection status and saved networks");
     println!("  alice-wifi-manager diag-ap    Run 20s safe AP diagnostic with auto-rollback");
+    println!("  alice-wifi-manager uninstall --yes  Remove manager and preserve Wi-Fi data");
 }
 
 fn main() {
@@ -207,6 +283,13 @@ fn main() {
         "diag-ap" => {
             if let Err(e) = run_diag_ap() {
                 eprintln!("Diagnostic caught AP failure (rolled back to STA): {}", e);
+                std::process::exit(1);
+            }
+        }
+
+        "uninstall" => {
+            if let Err(e) = run_uninstall(&args[2..]) {
+                eprintln!("Uninstall failed: {}", e);
                 std::process::exit(1);
             }
         }

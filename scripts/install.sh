@@ -41,6 +41,7 @@ cp /usr/sbin/wpa_supplicant /bkupgrade/data/recovery-$STAMP/wpa_supplicant 2>/de
 cp /etc/init.d/S99z-wifi-manager /bkupgrade/data/recovery-$STAMP/S99z-wifi-manager 2>/dev/null || true
 cp /bkupgrade/data/wpa_supplicant.conf /bkupgrade/data/recovery-$STAMP/wpa_supplicant.conf 2>/dev/null || true
 cp /bkupgrade/data/wpa_supplicant.conf.bak /bkupgrade/data/recovery-$STAMP/wpa_supplicant.conf.bak 2>/dev/null || true
+cp /bkupgrade/data/wpa_supplicant.ap.conf /bkupgrade/data/recovery-$STAMP/wpa_supplicant.ap.conf 2>/dev/null || true
 /etc/init.d/S99z-wifi-manager stop 2>/dev/null || true
 install -m 0755 '$REMOTE/alice-wifi-manager' /usr/bin/alice-wifi-manager
 install -m 0755 '$REMOTE/wpa_supplicant' /usr/sbin/wpa_supplicant
@@ -53,4 +54,3 @@ rm -rf '$REMOTE'
 "
 
 echo "Installation completed. Recovery copy: /bkupgrade/data/recovery-$STAMP"
-
