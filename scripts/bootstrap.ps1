@@ -14,7 +14,15 @@ $packageRoot = Join-Path $work "package"
 
 try {
     New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
-    Invoke-WebRequest -Uri "$baseUrl/$archive" -OutFile $archivePath
+    try {
+        Invoke-WebRequest -Uri "$baseUrl/$archive" -OutFile $archivePath
+    }
+    catch {
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/IohnMorris/alice-wifi-manager/releases/latest"
+        $archive = "alice-wifi-manager-$($release.tag_name)-armv7.tar.gz"
+        $archivePath = Join-Path $work $archive
+        Invoke-WebRequest -Uri "$baseUrl/$archive" -OutFile $archivePath
+    }
     Invoke-WebRequest -Uri "$baseUrl/SHA256SUMS" -OutFile $sumsPath
 
     $expected = ((Select-String -Path $sumsPath -Pattern ("  " + [regex]::Escape($archive) + "$")).Line -split "\s+")[0]

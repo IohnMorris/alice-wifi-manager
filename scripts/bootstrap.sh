@@ -32,7 +32,13 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/alice-wifi-manager.XXXXXX")
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT HUP INT TERM
 
-curl -fL --retry 3 "$BASE_URL/$ARCHIVE" -o "$WORK/$ARCHIVE"
+if ! curl -fL --retry 3 "$BASE_URL/$ARCHIVE" -o "$WORK/$ARCHIVE"; then
+    TAG=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" |
+        sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' | head -n 1)
+    [ -n "$TAG" ] || { echo "Unable to determine latest release tag" >&2; exit 1; }
+    ARCHIVE="alice-wifi-manager-${TAG}-armv7.tar.gz"
+    curl -fL --retry 3 "$BASE_URL/$ARCHIVE" -o "$WORK/$ARCHIVE"
+fi
 curl -fL --retry 3 "$BASE_URL/SHA256SUMS" -o "$WORK/SHA256SUMS"
 grep "  $ARCHIVE\$" "$WORK/SHA256SUMS" | (
     cd "$WORK"
