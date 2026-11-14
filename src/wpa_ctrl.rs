@@ -6,24 +6,28 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::net::UnixDatagram;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const WPA_SOCKET_PRIMARY: &str = "/var/run/wpa_supplicant/wlan0";
 pub const WPA_SOCKET_FALLBACK: &str = "/run/wpa_supplicant/wlan0";
 pub const AP_DEBUG_LOG_PATH: &str = "/bkupgrade/data/ap_debug.log";
-pub const AP_RUNTIME_LOG_PATH: &str = "/bkupgrade/data/ap_wpa_supplicant.log";
 pub const AP_CONFIG_PATH: &str = "/bkupgrade/data/wpa_supplicant.ap.conf";
 pub const WPA_PID_PATH: &str = "/var/run/wpa_supplicant.pid";
 const WPA_SUPPLICANT_BIN: &str = "/usr/sbin/wpa_supplicant";
 const STA_CONFIG_PATH: &str = "/bkupgrade/data/wpa_supplicant.conf";
+const MAX_DEBUG_LOG_SIZE: u64 = 1024 * 1024;
+const DEBUG_LOG_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 pub const AP_DEFAULT_SSID: &str = "Alice-Mini2-Setup";
 pub const AP_DEFAULT_PSK: &str = "alice1234";
 pub const AP_FREQUENCY_MHZ: u32 = 2437; // Канал 6 (2.4 ГГц)
 
 static CLIENT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static DEBUG_LOG_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WpaStatus {
@@ -58,19 +62,50 @@ pub struct ScannedNetwork {
     pub supported: bool,
 }
 
-/// Записывает диагностическую строку с таймстампом в `/bkupgrade/data/ap_debug.log`.
+/// Записывает диагностическую строку с таймстампом в ограниченный лог.
 pub fn append_debug_log(line: &str) {
+    let _guard = DEBUG_LOG_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let formatted = format!("[{}] {}\n", ts, line);
+    let mut record = format!("[{}] {}\n", ts, line).into_bytes();
+    if record.len() as u64 > MAX_DEBUG_LOG_SIZE {
+        record.truncate(MAX_DEBUG_LOG_SIZE as usize);
+    }
+
+    let mut reset = false;
+    if let Ok(metadata) = fs::metadata(AP_DEBUG_LOG_PATH) {
+        if metadata.len().saturating_add(record.len() as u64) > MAX_DEBUG_LOG_SIZE {
+            reset = true;
+        }
+        if let Ok(modified) = metadata.modified() {
+            if SystemTime::now()
+                .duration_since(modified)
+                .map(|age| age > DEBUG_LOG_RETENTION)
+                .unwrap_or(false)
+            {
+                reset = true;
+            }
+        }
+    }
+
+    if reset {
+        let _ = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(AP_DEBUG_LOG_PATH);
+    }
+
     if let Ok(mut f) = OpenOptions::new()
         .create(true)
         .append(true)
         .open(AP_DEBUG_LOG_PATH)
     {
-        let _ = f.write_all(formatted.as_bytes());
+        let _ = f.write_all(&record);
         let _ = f.sync_data();
     }
 }
@@ -326,7 +361,7 @@ pub fn start_ap_mode() -> Result<(), String> {
     // wpa_supplicant has rewritten the STA file with stale runtime data.
     crate::config_store::WpaConfigFile::load()?;
     write_ap_config()?;
-    restart_wpa_supplicant(AP_CONFIG_PATH, AP_RUNTIME_LOG_PATH)?;
+    restart_wpa_supplicant(AP_CONFIG_PATH)?;
 
     let monitor = WpaCtrl::open_event_monitor()?;
     let start = Instant::now();
@@ -354,20 +389,18 @@ pub fn start_ap_mode() -> Result<(), String> {
                 append_debug_log(&format!("AP STATUS: {}", current));
                 last_status = current;
             }
-            if !ap_enabled && runtime_log_contains("AP-ENABLED") {
-                ap_enabled = true;
-                append_debug_log("AP-ENABLED confirmed from runtime supplicant log");
-            }
-            if ap_enabled && status.is_completed_ap() {
-                append_debug_log("AP-ENABLED confirmed with mode=AP and wpa_state=COMPLETED");
+            if status.is_completed_ap() {
+                if ap_enabled {
+                    append_debug_log(
+                        "AP-ENABLED confirmed by event and mode=AP/wpa_state=COMPLETED",
+                    );
+                } else {
+                    append_debug_log(
+                        "AP state confirmed by mode=AP/wpa_state=COMPLETED after event monitor attach",
+                    );
+                }
                 return Ok(());
             }
-        }
-
-        fn runtime_log_contains(marker: &str) -> bool {
-            fs::read_to_string(AP_RUNTIME_LOG_PATH)
-                .map(|content| content.contains(marker))
-                .unwrap_or(false)
         }
         thread::sleep(Duration::from_millis(200));
     }
@@ -412,7 +445,7 @@ fn write_ap_config() -> Result<(), String> {
     Ok(())
 }
 
-fn restart_wpa_supplicant(config_path: &str, runtime_log: &str) -> Result<(), String> {
+fn restart_wpa_supplicant(config_path: &str) -> Result<(), String> {
     append_debug_log("Step WPA-1: stopping existing wpa_supplicant");
     stop_wpa_supplicant()?;
     remove_stale_wpa_runtime_files();
@@ -421,17 +454,6 @@ fn restart_wpa_supplicant(config_path: &str, runtime_log: &str) -> Result<(), St
         "Step WPA-2: starting {} with config {}",
         WPA_SUPPLICANT_BIN, config_path
     ));
-    let log_file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .mode(0o600)
-        .open(runtime_log)
-        .map_err(|e| format!("Failed to open wpa_supplicant runtime log: {}", e))?;
-    let err_file = log_file
-        .try_clone()
-        .map_err(|e| format!("Failed to clone wpa_supplicant runtime log: {}", e))?;
-
     Command::new(WPA_SUPPLICANT_BIN)
         .args([
             "-B",
@@ -440,14 +462,11 @@ fn restart_wpa_supplicant(config_path: &str, runtime_log: &str) -> Result<(), St
             WIFI_INTERFACE,
             "-c",
             config_path,
-            "-dd",
-            "-f",
-            runtime_log,
             "-P",
             WPA_PID_PATH,
         ])
-        .stdout(log_file)
-        .stderr(err_file)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("Failed to start wpa_supplicant: {}", e))?;
 
@@ -572,7 +591,7 @@ pub fn reconfigure_saved_config() -> Result<(), String> {
 pub fn restart_to_station() -> Result<(), String> {
     append_debug_log("STA restart: restoring verified configuration");
     crate::config_store::WpaConfigFile::restore_from_backup()?;
-    restart_wpa_supplicant(STA_CONFIG_PATH, "/bkupgrade/data/sta_wpa_supplicant.log")?;
+    restart_wpa_supplicant(STA_CONFIG_PATH)?;
 
     let ctrl = WpaCtrl::open()?;
     ctrl.request_ok("RECONFIGURE")?;

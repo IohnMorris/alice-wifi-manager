@@ -24,7 +24,6 @@ impl ApController {
     /// 4. Активация временного профиля `Alice-Mini2-Setup` (`mode=2`, `2437 МГц`).
     /// 5. Назначение `192.168.4.1/24` и запуск встроенных серверов DHCP и DNS.
     pub fn enter_ap_mode() -> Result<(Self, Vec<ScannedNetwork>), String> {
-        let _ = std::fs::remove_file(crate::wpa_ctrl::AP_DEBUG_LOG_PATH);
         crate::wpa_ctrl::append_debug_log("Step 1: Pre-scanning Wi-Fi networks into cache...");
         let cached_scan = match wpa_ctrl::scan_networks() {
             Ok(networks) => networks,
