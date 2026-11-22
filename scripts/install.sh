@@ -35,7 +35,15 @@ TRANSACTION="$PACKAGE_DIR/transaction-install.sh"
 [ -s "$TRANSACTION" ] || TRANSACTION="$PACKAGE_DIR/scripts/transaction-install.sh"
 test -s "$TRANSACTION" || { echo "Missing transaction installer" >&2; exit 1; }
 ssh "$USER@$HOST" "umask 077; mkdir '$REMOTE'"
-# Mini 2 has SSH but no sftp-server; force legacy SCP protocol.
-scp -O "$MANAGER" "$WPA" "$INIT" "$TRANSACTION" "$USER@$HOST:$REMOTE/"
+# Mini 2 has neither sftp-server nor a remote scp binary. Stream files over SSH.
+upload() {
+    local_file=$1
+    remote_name=$2
+    ssh "$USER@$HOST" "umask 077; dd of='$REMOTE/$remote_name' bs=65536 2>/dev/null" < "$local_file"
+}
+upload "$MANAGER" alice-wifi-manager
+upload "$WPA" wpa_supplicant
+upload "$INIT" S99z-wifi-manager
+upload "$TRANSACTION" transaction-install.sh
 ssh "$USER@$HOST" "sh '$REMOTE/transaction-install.sh' '$REMOTE' '$STAMP'"
 echo "Installation completed. Recovery copy: /bkupgrade/data/recovery-$STAMP"

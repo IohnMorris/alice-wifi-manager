@@ -12,6 +12,10 @@ WPA=/usr/sbin/wpa_supplicant
 INIT=/etc/init.d/S99z-wifi-manager
 SUCCESS=0
 REPLACED=0
+REPLACED_MANAGER=0
+REPLACED_WPA=0
+REPLACED_INIT=0
+REPLACE_WPA=1
 ROLLING_BACK=0
 
 fail() {
@@ -39,9 +43,9 @@ rollback() {
     [ "$ROLLING_BACK" -eq 0 ] || return 1
     ROLLING_BACK=1
     "$INIT" stop >/dev/null 2>&1 || true
-    restore_one "$RECOVERY/alice-wifi-manager" "$MANAGER" || return 1
-    restore_one "$RECOVERY/wpa_supplicant" "$WPA" || return 1
-    restore_one "$RECOVERY/S99z-wifi-manager" "$INIT" || return 1
+    [ "$REPLACED_MANAGER" -eq 0 ] || restore_one "$RECOVERY/alice-wifi-manager" "$MANAGER" || return 1
+    [ "$REPLACED_WPA" -eq 0 ] || restore_one "$RECOVERY/wpa_supplicant" "$WPA" || return 1
+    [ "$REPLACED_INIT" -eq 0 ] || restore_one "$RECOVERY/S99z-wifi-manager" "$INIT" || return 1
     [ -x "$INIT" ] && "$INIT" start >/dev/null 2>&1 || true
     return 0
 }
@@ -57,6 +61,7 @@ prune_recovery() {
 }
 
 cleanup() {
+    rm -f "$MANAGER.alice-new.$$" "$WPA.alice-new.$$" "$INIT.alice-new.$$" 2>/dev/null || true
     rm -rf "$PACKAGE" 2>/dev/null || true
     rmdir "$LOCK" 2>/dev/null || true
 }
@@ -83,6 +88,9 @@ command -v sha256sum >/dev/null 2>&1 || { fail "sha256sum is required on the dev
 EXPECTED_WPA_SHA256=3e7a5dd461d24fa72e8cc9ab53f1a2274f2df61a14a5ffe8cdb8b0f8d151f3bc
 ACTUAL_WPA_SHA256=$(sha256sum "$PACKAGE/wpa_supplicant" | awk '{print $1}')
 [ "$ACTUAL_WPA_SHA256" = "$EXPECTED_WPA_SHA256" ] || { fail "wpa_supplicant checksum mismatch"; exit 1; }
+if [ -f "$WPA" ] && [ "$(sha256sum "$WPA" | awk '{print $1}')" = "$ACTUAL_WPA_SHA256" ]; then
+    REPLACE_WPA=0
+fi
 mkdir "$LOCK" 2>/dev/null || { fail "another installation is already running"; exit 1; }
 printf '%s\n' "$$" > "$LOCK/pid"
 mkdir -p "$RECOVERY_ROOT" "$RECOVERY" || { fail "cannot create recovery directory"; exit 1; }
@@ -105,7 +113,9 @@ backup_one() {
     fi
 }
 backup_one "$MANAGER" alice-wifi-manager || { fail "manager backup failed"; exit 1; }
-backup_one "$WPA" wpa_supplicant || { fail "wpa_supplicant backup failed"; exit 1; }
+if [ "$REPLACE_WPA" -eq 1 ]; then
+    backup_one "$WPA" wpa_supplicant || { fail "wpa_supplicant backup failed"; exit 1; }
+fi
 backup_one "$INIT" S99z-wifi-manager || { fail "init backup failed"; exit 1; }
 backup_one /bkupgrade/data/wpa_supplicant.conf wpa_supplicant.conf || { fail "Wi-Fi config backup failed"; exit 1; }
 backup_one /bkupgrade/data/wpa_supplicant.conf.bak wpa_supplicant.conf.bak || { fail "Wi-Fi config backup failed"; exit 1; }
@@ -120,7 +130,15 @@ done
 # Normalize and stage on the destination filesystem before touching the running service.
 sed 's/\r$//' "$PACKAGE/S99z-wifi-manager" > "$PACKAGE/S99z-wifi-manager.normalized" || exit 1
 install -m 0755 "$PACKAGE/alice-wifi-manager" "$MANAGER.alice-new.$$" || exit 1
-install -m 0755 "$PACKAGE/wpa_supplicant" "$WPA.alice-new.$$" || exit 1
+if [ "$REPLACE_WPA" -eq 1 ]; then
+    available_kb=$(df -k /usr/sbin 2>/dev/null | awk 'NR==2 {print $4}')
+    wpa_kb=$(du -k "$PACKAGE/wpa_supplicant" 2>/dev/null | awk '{print $1}')
+    if [ -n "$available_kb" ] && [ -n "$wpa_kb" ] && [ "$available_kb" -le "$((wpa_kb + 256))" ]; then
+        fail "not enough rootfs space to replace wpa_supplicant"
+        exit 1
+    fi
+    install -m 0755 "$PACKAGE/wpa_supplicant" "$WPA.alice-new.$$" || exit 1
+fi
 install -m 0755 "$PACKAGE/S99z-wifi-manager.normalized" "$INIT.alice-new.$$" || exit 1
 
 [ ! -x "$INIT" ] || "$INIT" stop || { fail "existing manager did not stop"; exit 1; }
@@ -130,8 +148,13 @@ install -m 0755 "$PACKAGE/S99z-wifi-manager.normalized" "$INIT.alice-new.$$" || 
 }
 mv -f "$MANAGER.alice-new.$$" "$MANAGER" || exit 1
 REPLACED=1
-mv -f "$WPA.alice-new.$$" "$WPA" || exit 1
+REPLACED_MANAGER=1
+if [ "$REPLACE_WPA" -eq 1 ]; then
+    mv -f "$WPA.alice-new.$$" "$WPA" || exit 1
+    REPLACED_WPA=1
+fi
 mv -f "$INIT.alice-new.$$" "$INIT" || exit 1
+REPLACED_INIT=1
 
 "$INIT" start || { fail "new manager failed to start"; exit 1; }
 sleep 1
