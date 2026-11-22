@@ -125,9 +125,13 @@ Linux/macOS:
 ./scripts/install.sh --host 192.168.1.50
 ```
 
-Скрипты создают recovery-копии, сохраняют Wi-Fi-конфигурацию, заменяют только
-наши файлы, перезапускают менеджер и проверяют единственный экземпляр.
-`update.ps1` и `update.sh` используют тот же защищённый путь.
+Скрипты сначала проверяют пакет и сохраняют recovery-копии manager,
+модифицированного `wpa_supplicant`, init-скрипта и Wi-Fi-конфигурации. Затем
+создаётся lock, файлы подготавливаются на целевой файловой системе и заменяются
+атомарно. После запуска проверяются PID, control socket и `status`; при любой
+ошибке все заменённые файлы возвращаются автоматически. `update.ps1` и
+`update.sh` используют тот же путь, а recovery-каталоги ограничены последними
+успешными копиями.
 
 Удаление менеджера без удаления Wi-Fi профилей:
 
@@ -159,9 +163,7 @@ alice-wifi-manager diag-ap
 ## Диагностика
 
 ```text
-/bkupgrade/data/ap_debug.log
-/bkupgrade/data/ap_wpa_supplicant.log
-/bkupgrade/data/sta_wpa_supplicant.log
+/bkupgrade/data/ap_debug.log        # только ограниченные ошибки/сбои отката
 /bkupgrade/data/wpa_supplicant.conf
 /bkupgrade/data/wpa_supplicant.conf.bak
 ```

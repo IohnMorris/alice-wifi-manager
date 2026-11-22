@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::net::{SocketAddr, TcpStream};
+use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -7,6 +8,28 @@ use std::time::Duration;
 const ALICE_IPC_ADDR: &str = "127.0.0.1:9875";
 const MAX_TEXT_LEN: usize = 2000;
 static VOICE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static VOICE_QUEUE: OnceLock<SyncSender<String>> = OnceLock::new();
+
+fn voice_queue() -> &'static SyncSender<String> {
+    VOICE_QUEUE.get_or_init(|| {
+        let (tx, rx) = mpsc::sync_channel::<String>(4);
+        thread::spawn(move || {
+            while let Ok(text) = rx.recv() {
+                let lock = VOICE_LOCK.get_or_init(|| Mutex::new(()));
+                let Ok(_guard) = lock.lock() else {
+                    continue;
+                };
+                if let Err(error) = send_frame(&text) {
+                    crate::wpa_ctrl::append_debug_log(&format!(
+                        "Voice notification unavailable: {}",
+                        error
+                    ));
+                }
+            }
+        });
+        tx
+    })
+}
 
 /// Best-effort озвучивание через штатный IPC AliceCapability.
 ///
@@ -18,19 +41,7 @@ pub fn speak(text: &str) {
     }
 
     let text = text.to_string();
-    thread::spawn(move || {
-        let lock = VOICE_LOCK.get_or_init(|| Mutex::new(()));
-        let Ok(_guard) = lock.lock() else {
-            return;
-        };
-
-        if let Err(error) = send_frame(&text) {
-            crate::wpa_ctrl::append_debug_log(&format!(
-                "Voice notification unavailable: {}",
-                error
-            ));
-        }
-    });
+    let _ = voice_queue().try_send(text);
 }
 
 fn send_frame(text: &str) -> Result<(), String> {

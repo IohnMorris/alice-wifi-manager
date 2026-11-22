@@ -1,7 +1,8 @@
 # Установка
 
-Проект пока протестирован исключительно на Яндекс Станции Mini 2. Поддержка
-других устройств не заявляется. Перед началом нужен SSH-доступ к колонке.
+Проект протестирован на Яндекс Станции Mini 2 (Buildroot Linux 4.9.68, ARMv7,
+`wlan0`, `sprdwl_ng`). Перед началом нужен рабочий SSH-доступ к колонке и
+резервный сервисный канал, если он доступен.
 
 Самый простой вариант на Linux/macOS:
 
@@ -9,32 +10,43 @@
 curl -fsSL https://raw.githubusercontent.com/IohnMorris/alice-wifi-manager/main/scripts/bootstrap.sh | sh -s -- --host 192.168.1.50
 ```
 
-Bootstrap скачивает последний релиз, проверяет SHA256 и запускает установку.
-На колонке сохраняется recovery-копия текущих бинарников и конфигураций.
+В Windows PowerShell:
 
-Установка выполняется только при наличии рабочего канала к устройству:
-SSH по сети, ADB по сети или сервисный доступ. Обычный USB-доступ к Mini 2
-не предполагается.
-
-Перед заменой файлов необходимо сохранить:
-
-```text
-/bkupgrade/data/wpa_supplicant.conf
-/bkupgrade/data/wpa_supplicant.conf.bak
-/etc/init.d/S40wifi
-/usr/sbin/wpa_supplicant
+```powershell
+irm https://raw.githubusercontent.com/IohnMorris/alice-wifi-manager/main/scripts/bootstrap.ps1 -OutFile "$env:TEMP\alice-install.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\alice-install.ps1" -HostName 192.168.1.50
 ```
 
-Установка не должна удалять сохранённые Wi-Fi профили или менять штатный
-`S40wifi` без отдельной проверки.
+Bootstrap скачивает ARMv7-релиз и проверяет SHA256 архива. Установщик затем:
 
-После установки проверить:
+1. загружает manager, проверенный модифицированный `wpa_supplicant` и init-
+   скрипт во временный каталог;
+2. создаёт lock и recovery-каталог, сохраняя старые файлы и Wi-Fi-конфиги;
+3. проверяет запись на целевые файловые системы и останавливает сервис;
+4. атомарно заменяет подготовленные файлы на одной файловой системе;
+5. запускает сервис и проверяет PID, control socket, `status` и процессы WPA;
+6. при любой ошибке восстанавливает предыдущие файлы и оставляет recovery.
+
+Старые recovery-каталоги ограниченно очищаются только после успешной установки;
+каталог неудачной транзакции сохраняется. Сохранённые Wi-Fi-профили не
+удаляются и не заменяются установщиком.
+
+Для установки локального пакета:
+
+```sh
+./scripts/install.sh --host 192.168.1.50 --package ./package
+```
+
+```powershell
+.\scripts\install.ps1 -HostName 192.168.1.50 -PackageDir .\package
+```
+
+После установки проверьте:
 
 ```sh
 /usr/bin/alice-wifi-manager status
-ps | grep alice-wifi-manager
+ps | grep -E 'alice-wifi-manager|wpa_supplicant'
 test -S /var/run/alice-wifi-manager.sock
 ```
 
-Аппаратная проверка обязательна: STA, AP, DHCP, DNS, HTTP и rollback должны
-быть проверены на реальной Mini 2 отдельно от host-сборки.
+Аппаратная проверка обязательна отдельно от host-сборки: STA, AP, DHCP, DNS,
+HTTP, перезагрузка и реальный rollback на Mini 2.

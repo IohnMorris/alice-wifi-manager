@@ -37,6 +37,7 @@ jobs:
           cp target/armv7-unknown-linux-musleabihf/release/alice-wifi-manager dist/alice-wifi-manager/
           cp artifacts/armv7/wpa_supplicant dist/alice-wifi-manager/
           cp scripts/S99z-wifi-manager dist/alice-wifi-manager/
+          cp scripts/transaction-install.sh dist/alice-wifi-manager/
           cp -r scripts docs README.md CHANGELOG.md dist/alice-wifi-manager/
           tar -C dist -czf "alice-wifi-manager-${GITHUB_REF_NAME}-armv7.tar.gz" alice-wifi-manager
           cp "alice-wifi-manager-${GITHUB_REF_NAME}-armv7.tar.gz" alice-wifi-manager-armv7.tar.gz

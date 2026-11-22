@@ -9,7 +9,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixListener;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -107,7 +107,7 @@ pub fn run_daemon(term_flag: Arc<AtomicBool>) -> Result<(), String> {
     }
 
     let state = Arc::new(Mutex::new(SharedManagerState::new()));
-    let (cmd_tx, cmd_rx) = mpsc::channel::<TransitionCommand>();
+    let (cmd_tx, cmd_rx) = mpsc::sync_channel::<TransitionCommand>(16);
 
     // Запускаем поток приёма CLI-команд (start-ap, stop-ap, status)
     start_cli_ipc_listener(Arc::clone(&state), cmd_tx.clone(), Arc::clone(&term_flag));
@@ -244,7 +244,7 @@ pub fn run_daemon(term_flag: Arc<AtomicBool>) -> Result<(), String> {
 
 fn probe_saved_networks_from_ap(
     state: &Arc<Mutex<SharedManagerState>>,
-    cmd_tx: &Sender<TransitionCommand>,
+    cmd_tx: &SyncSender<TransitionCommand>,
     active_ap: &mut Option<ApController>,
     active_http: &mut Option<HttpServerHandle>,
 ) {
@@ -348,7 +348,7 @@ fn check_station_connected() -> Option<(String, String)> {
 
 fn enter_ap_state(
     state: &Arc<Mutex<SharedManagerState>>,
-    cmd_tx: &Sender<TransitionCommand>,
+    cmd_tx: &SyncSender<TransitionCommand>,
     active_ap: &mut Option<ApController>,
     active_http: &mut Option<HttpServerHandle>,
 ) {
@@ -402,7 +402,7 @@ fn exit_ap_state(
 /// Выполняет 3-этапный транзакционный сценарий подключения к новой сети (Раздел 5 ТЗ).
 fn execute_connection_transaction(
     state: &Arc<Mutex<SharedManagerState>>,
-    cmd_tx: &Sender<TransitionCommand>,
+    cmd_tx: &SyncSender<TransitionCommand>,
     active_ap: &mut Option<ApController>,
     active_http: &mut Option<HttpServerHandle>,
     ssid: &str,
@@ -549,7 +549,7 @@ fn execute_connection_transaction(
 /// Запускает фоновый слушатель `/var/run/alice-wifi-manager.sock` для CLI-команд (`start-ap`, `stop-ap`, `status`).
 fn start_cli_ipc_listener(
     state: Arc<Mutex<SharedManagerState>>,
-    cmd_tx: Sender<TransitionCommand>,
+    cmd_tx: SyncSender<TransitionCommand>,
     term_flag: Arc<AtomicBool>,
 ) {
     let _ = fs::remove_file(CLI_CONTROL_SOCKET);
@@ -574,12 +574,13 @@ fn start_cli_ipc_listener(
                         let cmd_str = String::from_utf8_lossy(&cmd_buf[..n]).trim().to_string();
                         let reply = match cmd_str.as_str() {
                             "start-ap" => {
-                                let _ = cmd_tx.send(TransitionCommand::ForceStartAp);
+                                let _ = cmd_tx.try_send(TransitionCommand::ForceStartAp);
                                 "OK: Switching to Access Point mode (Alice-Mini2-Setup)\n"
                                     .to_string()
                             }
                             "stop-ap" => {
-                                let _ = cmd_tx.send(TransitionCommand::StopApAndReturnToPrimary);
+                                let _ =
+                                    cmd_tx.try_send(TransitionCommand::StopApAndReturnToPrimary);
                                 "OK: Stopping Access Point mode and returning to primary Wi-Fi\n"
                                     .to_string()
                             }

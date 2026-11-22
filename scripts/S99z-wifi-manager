@@ -18,22 +18,29 @@ resume_system_daemons() {
 start() {
     printf "Starting alice-wifi-manager: "
     resume_system_daemons
-    start-stop-daemon -S -q -b -m -p "$PIDFILE" -x "$DAEMON" -- daemon \
-        >/dev/null 2>&1
-    if [ $? -eq 0 ]; then
+    if start-stop-daemon -S -q -b -m -p "$PIDFILE" -x "$DAEMON" -- daemon \
+        >/dev/null 2>&1; then
         echo "OK"
-    else
-        echo "FAIL"
+        return 0
     fi
+    echo "FAIL"
+    return 1
 }
 
 stop() {
     printf "Stopping alice-wifi-manager: "
-    "$DAEMON" stop-ap >/dev/null 2>&1 || true
+    if [ -x "$DAEMON" ]; then
+        "$DAEMON" stop-ap >/dev/null 2>&1 || { echo "FAIL"; return 1; }
+    fi
     start-stop-daemon -K -q -p "$PIDFILE" 2>/dev/null || true
     rm -f "$PIDFILE" /var/run/alice-wifi-manager.sock
+    if [ -n "$(pidof alice-wifi-manager 2>/dev/null)" ]; then
+        echo "FAIL"
+        return 1
+    fi
     resume_system_daemons
     echo "OK"
+    return 0
 }
 
 restart() {
@@ -49,20 +56,22 @@ status() {
 case "$1" in
     start)
         start
+        exit $?
         ;;
     stop)
         stop
+        exit $?
         ;;
     restart|reload)
         restart
+        exit $?
         ;;
     status)
         status
+        exit $?
         ;;
     *)
         echo "Usage: $0 {start|stop|restart|status}"
         exit 1
         ;;
 esac
-
-exit 0

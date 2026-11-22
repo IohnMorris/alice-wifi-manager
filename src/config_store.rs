@@ -9,6 +9,9 @@ pub const WPA_CONF_BAK_PATH: &str = "/bkupgrade/data/wpa_supplicant.conf.bak";
 pub const WPA_CONF_TMP_PATH: &str = "/bkupgrade/data/wpa_supplicant.conf.tmp";
 
 const DEFAULT_HEADER: &str = "ctrl_interface=/var/run/wpa_supplicant\nupdate_config=1";
+const MAX_CONFIG_BYTES: u64 = 64 * 1024;
+const MAX_NETWORKS: usize = 64;
+const MAX_CONFIG_LINE_BYTES: usize = 1024;
 
 /// Внутреннее представление профиля сети из wpa_supplicant.conf (с паролем и доп. полями).
 #[derive(Debug, Clone)]
@@ -77,6 +80,12 @@ impl WpaConfigFile {
     }
 
     fn is_file_structurally_valid(path: &str) -> bool {
+        let Ok(metadata) = fs::metadata(Path::new(path)) else {
+            return false;
+        };
+        if metadata.len() > MAX_CONFIG_BYTES {
+            return false;
+        }
         let Ok(content) = fs::read_to_string(Path::new(path)) else {
             return false;
         };
@@ -113,6 +122,11 @@ impl WpaConfigFile {
     /// Парсит `/bkupgrade/data/wpa_supplicant.conf`.
     pub fn load() -> Result<Self, String> {
         Self::ensure_valid_or_restore()?;
+        let metadata = fs::metadata(WPA_CONF_PATH)
+            .map_err(|e| format!("Failed to stat {}: {}", WPA_CONF_PATH, e))?;
+        if metadata.len() > MAX_CONFIG_BYTES {
+            return Err(format!("Wi-Fi config exceeds {} bytes", MAX_CONFIG_BYTES));
+        }
         let content = fs::read_to_string(WPA_CONF_PATH)
             .map_err(|e| format!("Failed to read {}: {}", WPA_CONF_PATH, e))?;
 
@@ -128,6 +142,12 @@ impl WpaConfigFile {
         let mut cur_extra = Vec::new();
 
         for raw_line in content.lines() {
+            if raw_line.len() > MAX_CONFIG_LINE_BYTES {
+                return Err(format!(
+                    "Wi-Fi config line exceeds {} bytes",
+                    MAX_CONFIG_LINE_BYTES
+                ));
+            }
             let line = raw_line.trim();
             if !in_network {
                 if line.starts_with("network={") || line.starts_with("network = {") {
@@ -144,6 +164,9 @@ impl WpaConfigFile {
             } else if line == "}" {
                 in_network = false;
                 if !cur_ssid.is_empty() {
+                    if networks.len() >= MAX_NETWORKS {
+                        return Err(format!("Wi-Fi config exceeds {} networks", MAX_NETWORKS));
+                    }
                     let id = networks.len();
                     networks.push(StoredNetwork {
                         id,
@@ -201,6 +224,13 @@ impl WpaConfigFile {
         }
         out.push('\n');
 
+        if self.networks.len() > MAX_NETWORKS {
+            return Err(format!("Wi-Fi config exceeds {} networks", MAX_NETWORKS));
+        }
+        if out.len() as u64 > MAX_CONFIG_BYTES {
+            return Err(format!("Wi-Fi config exceeds {} bytes", MAX_CONFIG_BYTES));
+        }
+
         for net in &self.networks {
             out.push_str("network={\n");
             out.push_str(&format!("        ssid=\"{}\"\n", escape_quotes(&net.ssid)));
@@ -214,6 +244,12 @@ impl WpaConfigFile {
                 out.push_str("        scan_ssid=1\n");
             }
             for extra in &net.extra_lines {
+                if extra.len() > MAX_CONFIG_LINE_BYTES {
+                    return Err(format!(
+                        "Wi-Fi config line exceeds {} bytes",
+                        MAX_CONFIG_LINE_BYTES
+                    ));
+                }
                 out.push_str(extra);
                 out.push('\n');
             }
@@ -221,6 +257,9 @@ impl WpaConfigFile {
                 out.push_str("        disabled=1\n");
             }
             out.push_str("}\n\n");
+        }
+        if out.len() as u64 > MAX_CONFIG_BYTES {
+            return Err(format!("Wi-Fi config exceeds {} bytes", MAX_CONFIG_BYTES));
         }
 
         let mut tmp_file = OpenOptions::new()
@@ -396,7 +435,7 @@ pub fn extract_clean_psk(stored: &StoredNetwork) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{StoredNetwork, WpaConfigFile};
+    use super::{StoredNetwork, WpaConfigFile, MAX_CONFIG_LINE_BYTES, MAX_NETWORKS};
 
     fn config_with_networks() -> WpaConfigFile {
         WpaConfigFile {
@@ -437,6 +476,40 @@ mod tests {
         assert_eq!(config.networks[0].id, 0);
         assert_eq!(config.networks[0].ssid, "Second");
         assert!(!config.networks[0].is_primary);
+    }
+
+    #[test]
+    fn save_rejects_too_many_networks_before_touching_disk() {
+        let mut config = config_with_networks();
+        config
+            .networks
+            .extend((2..=MAX_NETWORKS).map(|id| StoredNetwork {
+                id,
+                ssid: format!("network-{id}"),
+                key_mgmt: "WPA-PSK".to_string(),
+                psk: Some("\"password\"".to_string()),
+                is_primary: false,
+                scan_ssid: false,
+                extra_lines: Vec::new(),
+            }));
+        assert_eq!(config.networks.len(), MAX_NETWORKS + 1);
+        let error = config
+            .save_atomic()
+            .expect_err("oversized profile list must be rejected");
+        assert!(error.contains("networks"));
+    }
+
+    #[test]
+    fn save_rejects_oversized_line() {
+        let mut config = config_with_networks();
+        config.networks[0].extra_lines.push(format!(
+            "        vendor_field={}",
+            "x".repeat(MAX_CONFIG_LINE_BYTES)
+        ));
+        let error = config
+            .save_atomic()
+            .expect_err("oversized serialized config must be rejected");
+        assert!(error.contains("line"));
     }
 
     #[test]

@@ -31,5 +31,14 @@ jobs:
           for file in scripts/*.sh; do
             sh -n "$file"
           done
+      - name: Check transactional installer invariants
+        run: |
+          set -eu
+          test -s scripts/transaction-install.sh
+          grep -q 'alice-wifi-manager.install.lock' scripts/transaction-install.sh
+          grep -q 'MANIFEST.sha256' scripts/transaction-install.sh
+          grep -q 'rollback' scripts/transaction-install.sh
+          ! grep -q 'mv /tmp/alice-wifi-manager /usr/bin' scripts/*.ps1
+          ! grep -q 'sync_data()' src/wpa_ctrl.rs
       - name: Validate embedded web page
         run: test -s web/index.html

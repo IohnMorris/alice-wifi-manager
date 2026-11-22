@@ -14,6 +14,8 @@ command -v file >/dev/null 2>&1 && file "$BIN"
 command -v sha256sum >/dev/null 2>&1 && sha256sum "$BIN"
 test -s "$ROOT/web/index.html"
 test -s "$ROOT/scripts/S99z-wifi-manager"
+test -s "$ROOT/scripts/transaction-install.sh"
+sh -n "$ROOT/scripts/transaction-install.sh"
 
 echo "Source and local release checks passed."
 

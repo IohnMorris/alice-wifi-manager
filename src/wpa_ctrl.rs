@@ -19,8 +19,10 @@ pub const AP_CONFIG_PATH: &str = "/bkupgrade/data/wpa_supplicant.ap.conf";
 pub const WPA_PID_PATH: &str = "/var/run/wpa_supplicant.pid";
 const WPA_SUPPLICANT_BIN: &str = "/usr/sbin/wpa_supplicant";
 const STA_CONFIG_PATH: &str = "/bkupgrade/data/wpa_supplicant.conf";
-const MAX_DEBUG_LOG_SIZE: u64 = 1024 * 1024;
+const MAX_DEBUG_LOG_SIZE: u64 = 64 * 1024;
+const MAX_DEBUG_RECORD_SIZE: usize = 512;
 const DEBUG_LOG_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const DEBUG_DEDUP_WINDOW: Duration = Duration::from_secs(30);
 
 pub const AP_DEFAULT_SSID: &str = "Alice-Mini2-Setup";
 pub const AP_DEFAULT_PSK: &str = "alice1234";
@@ -28,6 +30,7 @@ pub const AP_FREQUENCY_MHZ: u32 = 2437; // Канал 6 (2.4 ГГц)
 
 static CLIENT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 static DEBUG_LOG_LOCK: Mutex<()> = Mutex::new(());
+static LAST_DEBUG_ERROR: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WpaStatus {
@@ -62,36 +65,89 @@ pub struct ScannedNetwork {
     pub supported: bool,
 }
 
-/// Записывает диагностическую строку с таймстампом в ограниченный лог.
+/// Записывает только ошибки и сбои отката в небольшой best-effort журнал.
+/// Ошибка диагностики никогда не должна ломать основной сетевой процесс.
 pub fn append_debug_log(line: &str) {
+    let normalized = line.to_ascii_lowercase();
+    let looks_like_failure = [
+        "error",
+        "failed",
+        "failure",
+        "rollback",
+        "rejected",
+        "unable",
+        "timeout",
+        "unavailable",
+        "fatal",
+        "emergency",
+        "malformed",
+        "overflow",
+        "exhausted",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker));
+    let is_routine_message = [
+        "step ",
+        "status:",
+        "confirmed",
+        "starting",
+        "stopped cleanly",
+        "removed stale",
+        "written to persistent",
+        "fully operational",
+        "rollback started",
+        "reverting back",
+        "restoring verified",
+        "startup detected",
+        "signal received during",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker));
+    if !looks_like_failure || is_routine_message {
+        return;
+    }
+
     let _guard = DEBUG_LOG_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let now = Instant::now();
+    {
+        let mut last = LAST_DEBUG_ERROR
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if last
+            .as_ref()
+            .map(|(previous, at)| previous == line && at.elapsed() < DEBUG_DEDUP_WINDOW)
+            .unwrap_or(false)
+        {
+            return;
+        }
+        *last = Some((line.to_string(), now));
+    }
+
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let mut record = format!("[{}] {}\n", ts, line).into_bytes();
-    if record.len() as u64 > MAX_DEBUG_LOG_SIZE {
-        record.truncate(MAX_DEBUG_LOG_SIZE as usize);
+    let safe_line = line.replace(['\r', '\n'], " ");
+    let mut record = format!("[{}] {}\n", ts, safe_line).into_bytes();
+    if record.len() > MAX_DEBUG_RECORD_SIZE {
+        record.truncate(MAX_DEBUG_RECORD_SIZE);
+        if !record.ends_with(b"\n") {
+            record.push(b'\n');
+        }
     }
 
     let mut reset = false;
     if let Ok(metadata) = fs::metadata(AP_DEBUG_LOG_PATH) {
-        if metadata.len().saturating_add(record.len() as u64) > MAX_DEBUG_LOG_SIZE {
-            reset = true;
-        }
-        if let Ok(modified) = metadata.modified() {
-            if SystemTime::now()
-                .duration_since(modified)
+        reset = metadata.len().saturating_add(record.len() as u64) > MAX_DEBUG_LOG_SIZE
+            || metadata
+                .modified()
+                .ok()
+                .and_then(|modified| SystemTime::now().duration_since(modified).ok())
                 .map(|age| age > DEBUG_LOG_RETENTION)
-                .unwrap_or(false)
-            {
-                reset = true;
-            }
-        }
+                .unwrap_or(false);
     }
-
     if reset {
         let _ = OpenOptions::new()
             .create(true)
@@ -99,14 +155,12 @@ pub fn append_debug_log(line: &str) {
             .truncate(true)
             .open(AP_DEBUG_LOG_PATH);
     }
-
-    if let Ok(mut f) = OpenOptions::new()
+    if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)
         .open(AP_DEBUG_LOG_PATH)
     {
-        let _ = f.write_all(&record);
-        let _ = f.sync_data();
+        let _ = file.write_all(&record);
     }
 }
 
@@ -163,14 +217,22 @@ impl WpaCtrl {
 
     /// Вычитывает все накопившиеся асинхронные события `<...>` из сокета монитора.
     pub fn drain_events(&self) -> Vec<String> {
-        let mut events = Vec::new();
+        const MAX_EVENTS_PER_DRAIN: usize = 32;
+        const MAX_EVENT_BYTES: usize = 512;
+        let mut events = Vec::with_capacity(MAX_EVENTS_PER_DRAIN);
         let mut buf = [0u8; 4096];
-        while let Ok(n) = self.sock.recv(&mut buf) {
+        while events.len() < MAX_EVENTS_PER_DRAIN {
+            let Ok(n) = self.sock.recv(&mut buf) else {
+                break;
+            };
             if n == 0 {
                 break;
             }
-            let msg = String::from_utf8_lossy(&buf[..n]).trim().to_string();
-            events.push(msg);
+            let raw = String::from_utf8_lossy(&buf[..n]);
+            let msg = raw.trim();
+            if !msg.is_empty() {
+                events.push(msg.chars().take(MAX_EVENT_BYTES).collect());
+            }
         }
         events
     }

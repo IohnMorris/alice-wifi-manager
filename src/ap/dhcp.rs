@@ -12,6 +12,7 @@ use std::time::Duration;
 const POOL_START: u8 = 10;
 const POOL_END: u8 = 50;
 const LEASE_TIME_SECS: u32 = 3600;
+const MAX_LEASES: usize = (POOL_END - POOL_START + 1) as usize;
 
 pub struct DhcpServerHandle {
     stop_flag: Arc<AtomicBool>,
@@ -91,10 +92,15 @@ fn run_dhcp_loop(udp: UdpSocket, stop_flag: Arc<AtomicBool>) {
         };
 
         let mac = req.chaddr().to_vec();
-        if mac.is_empty() {
+        if mac.is_empty() || mac.len() > 16 {
             continue;
         }
 
+        if !leases.contains_key(&mac) && leases.len() >= MAX_LEASES {
+            if let Some(oldest) = leases.keys().next().cloned() {
+                leases.remove(&oldest);
+            }
+        }
         let assigned_ip = *leases.entry(mac.clone()).or_insert_with(|| {
             let ip = Ipv4Addr::new(192, 168, 4, next_octet);
             next_octet = if next_octet >= POOL_END {

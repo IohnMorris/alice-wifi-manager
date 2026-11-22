@@ -5,13 +5,16 @@ use crate::net_iface::AP_IP;
 use crate::state_machine::{SharedManagerState, TransitionCommand};
 use std::io::{Read, Write};
 use std::net::{SocketAddrV4, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 const EMBEDDED_INDEX_HTML: &str = include_str!("../../web/index.html");
+const MAX_HTTP_CLIENTS: usize = 8;
+const MAX_HTTP_REQUEST_BYTES: usize = 8192;
+static ACTIVE_HTTP_CLIENTS: AtomicUsize = AtomicUsize::new(0);
 
 pub struct HttpServerHandle {
     stop_flag: Arc<AtomicBool>,
@@ -21,7 +24,7 @@ pub struct HttpServerHandle {
 impl HttpServerHandle {
     pub fn start(
         state: Arc<Mutex<SharedManagerState>>,
-        cmd_tx: Sender<TransitionCommand>,
+        cmd_tx: SyncSender<TransitionCommand>,
     ) -> Result<Self, String> {
         let bind_addr = SocketAddrV4::new(AP_IP, 80);
         let listener = TcpListener::bind(bind_addr)
@@ -61,16 +64,21 @@ impl Drop for HttpServerHandle {
 fn run_http_loop(
     listener: TcpListener,
     state: Arc<Mutex<SharedManagerState>>,
-    cmd_tx: Sender<TransitionCommand>,
+    cmd_tx: SyncSender<TransitionCommand>,
     stop_flag: Arc<AtomicBool>,
 ) {
     while !stop_flag.load(Ordering::Relaxed) {
         match listener.accept() {
             Ok((stream, _peer)) => {
+                if ACTIVE_HTTP_CLIENTS.fetch_add(1, Ordering::AcqRel) >= MAX_HTTP_CLIENTS {
+                    ACTIVE_HTTP_CLIENTS.fetch_sub(1, Ordering::Release);
+                    continue;
+                }
                 let state_ref = Arc::clone(&state);
                 let tx_ref = cmd_tx.clone();
                 thread::spawn(move || {
                     handle_client(stream, state_ref, tx_ref);
+                    ACTIVE_HTTP_CLIENTS.fetch_sub(1, Ordering::Release);
                 });
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -86,12 +94,12 @@ fn run_http_loop(
 fn handle_client(
     mut stream: TcpStream,
     state: Arc<Mutex<SharedManagerState>>,
-    cmd_tx: Sender<TransitionCommand>,
+    cmd_tx: SyncSender<TransitionCommand>,
 ) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
 
-    let mut buf = [0u8; 8192];
+    let mut buf = [0u8; MAX_HTTP_REQUEST_BYTES];
     let Ok(n) = stream.read(&mut buf) else {
         return;
     };
@@ -100,7 +108,13 @@ fn handle_client(
     }
 
     let raw_req = String::from_utf8_lossy(&buf[..n]);
-    let (headers_part, body_part) = raw_req.split_once("\r\n\r\n").unwrap_or((&raw_req, ""));
+    let Some((headers_part, body_part)) = raw_req.split_once("\r\n\r\n") else {
+        return;
+    };
+    if n == MAX_HTTP_REQUEST_BYTES {
+        crate::wpa_ctrl::append_debug_log("HTTP request rejected: request exceeds bounded buffer");
+        return;
+    }
 
     let mut lines = headers_part.lines();
     let Some(request_line) = lines.next() else {
@@ -112,12 +126,28 @@ fn handle_client(
     let path = req_parts.next().unwrap_or("/");
 
     let mut host_header: Option<String> = None;
+    let mut content_length = 0usize;
     for line in lines {
         if let Some((k, v)) = line.split_once(':') {
-            if k.trim().eq_ignore_ascii_case("host") {
-                host_header = Some(v.trim().to_string());
+            let key = k.trim();
+            let value = v.trim();
+            if key.eq_ignore_ascii_case("host") {
+                host_header = Some(value.to_string());
+            } else if key.eq_ignore_ascii_case("content-length") {
+                let Ok(length) = value.parse::<usize>() else {
+                    return;
+                };
+                if length > 4096 {
+                    crate::wpa_ctrl::append_debug_log("HTTP request rejected: body exceeds limit");
+                    return;
+                }
+                content_length = length;
             }
         }
+    }
+    if body_part.len() > 4096 || content_length > body_part.len() {
+        crate::wpa_ctrl::append_debug_log("HTTP request rejected: incomplete or oversized body");
+        return;
     }
 
     // 1. Обработка системных проверок Captive Portal (HTTP 302 -> http://192.168.4.1/)
@@ -159,7 +189,7 @@ fn handle_client(
         // даём браузеру 300 мс гарантированно получить HTTP-ответ до сброса wlan0
         if let Some(cmd) = api_res.post_action {
             thread::sleep(Duration::from_millis(300));
-            let _ = cmd_tx.send(cmd);
+            let _ = cmd_tx.try_send(cmd);
         }
         return;
     }
