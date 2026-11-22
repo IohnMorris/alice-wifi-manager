@@ -354,6 +354,31 @@ fn enter_ap_state(
 ) {
     match ApController::enter_ap_mode() {
         Ok((ap_ctrl, scanned)) => {
+            let http = match HttpServerHandle::start(Arc::clone(state), cmd_tx.clone()) {
+                Ok(http) => http,
+                Err(error) => {
+                    crate::wpa_ctrl::append_debug_log(&format!(
+                        "HTTP startup failed after AP startup; rolling back AP: {}",
+                        error
+                    ));
+                    if let Err(rollback_error) = ap_ctrl.shutdown_and_resume_station(true) {
+                        crate::wpa_ctrl::append_debug_log(&format!(
+                            "HTTP startup rollback to STA failed: {}",
+                            rollback_error
+                        ));
+                    }
+                    process_guard::ensure_all_resumed();
+                    if let Ok(mut g) = state.lock() {
+                        g.mode = OperatingMode::Station;
+                        g.connected_ssid = None;
+                        g.current_ip = None;
+                        g.busy_transaction = false;
+                        g.last_error = Some(format!("HTTP AP bind failed: {}", error));
+                        g.last_result = "failed".to_string();
+                    }
+                    return;
+                }
+            };
             voice::speak("Точка доступа для настройки Wi-Fi запущена.");
             if let Ok(mut g) = state.lock() {
                 g.mode = OperatingMode::AccessPoint;
@@ -365,9 +390,7 @@ fn enter_ap_state(
                 g.busy_transaction = false;
             }
             *active_ap = Some(ap_ctrl);
-            if let Ok(http) = HttpServerHandle::start(Arc::clone(state), cmd_tx.clone()) {
-                *active_http = Some(http);
-            }
+            *active_http = Some(http);
         }
         Err(e) => {
             crate::wpa_ctrl::append_debug_log(&format!(
@@ -538,11 +561,35 @@ fn execute_connection_transaction(
             g.busy_transaction = false;
         }
 
-        // Снова поднимаем HTTP-сервер на 192.168.4.1:80
-        if let Ok(http) = HttpServerHandle::start(Arc::clone(state), cmd_tx.clone()) {
-            *active_http = Some(http);
+        // Снова поднимаем HTTP-сервер на 192.168.4.1:80.
+        match HttpServerHandle::start(Arc::clone(state), cmd_tx.clone()) {
+            Ok(http) => {
+                *active_http = Some(http);
+                voice::speak("Не удалось подключиться. Возвращаю точку доступа для настройки.");
+            }
+            Err(error) => {
+                crate::wpa_ctrl::append_debug_log(&format!(
+                    "HTTP startup failed while restoring AP: {}",
+                    error
+                ));
+                if let Some(ap_ctrl) = active_ap.take() {
+                    if let Err(rollback_error) = ap_ctrl.shutdown_and_resume_station(true) {
+                        crate::wpa_ctrl::append_debug_log(&format!(
+                            "HTTP restore failure STA fallback failed: {}",
+                            rollback_error
+                        ));
+                    }
+                } else {
+                    process_guard::ensure_all_resumed();
+                }
+                if let Ok(mut g) = state.lock() {
+                    g.mode = OperatingMode::Station;
+                    g.current_ip = net_iface::get_station_ipv4().map(|ip| ip.to_string());
+                    g.last_error = Some(format!("HTTP AP bind failed: {}", error));
+                    g.busy_transaction = false;
+                }
+            }
         }
-        voice::speak("Не удалось подключиться. Возвращаю точку доступа для настройки.");
     }
 }
 

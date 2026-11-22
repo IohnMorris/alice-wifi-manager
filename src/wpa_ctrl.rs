@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::net::UnixDatagram;
 use std::path::{Path, PathBuf};
@@ -21,7 +21,6 @@ const WPA_SUPPLICANT_BIN: &str = "/usr/sbin/wpa_supplicant";
 const STA_CONFIG_PATH: &str = "/bkupgrade/data/wpa_supplicant.conf";
 const MAX_DEBUG_LOG_SIZE: u64 = 64 * 1024;
 const MAX_DEBUG_RECORD_SIZE: usize = 512;
-const DEBUG_LOG_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const DEBUG_DEDUP_WINDOW: Duration = Duration::from_secs(30);
 
 pub const AP_DEFAULT_SSID: &str = "Alice-Mini2-Setup";
@@ -95,7 +94,6 @@ pub fn append_debug_log(line: &str) {
         "removed stale",
         "written to persistent",
         "fully operational",
-        "rollback started",
         "reverting back",
         "restoring verified",
         "startup detected",
@@ -129,7 +127,11 @@ pub fn append_debug_log(line: &str) {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let safe_line = line.replace(['\r', '\n'], " ");
+    let safe_line = if normalized.contains("psk") || normalized.contains("password") {
+        "sensitive diagnostic suppressed".to_string()
+    } else {
+        line.replace(['\r', '\n'], " ")
+    };
     let mut record = format!("[{}] {}\n", ts, safe_line).into_bytes();
     if record.len() > MAX_DEBUG_RECORD_SIZE {
         record.truncate(MAX_DEBUG_RECORD_SIZE);
@@ -139,14 +141,12 @@ pub fn append_debug_log(line: &str) {
     }
 
     let mut reset = false;
-    if let Ok(metadata) = fs::metadata(AP_DEBUG_LOG_PATH) {
-        reset = metadata.len().saturating_add(record.len() as u64) > MAX_DEBUG_LOG_SIZE
-            || metadata
-                .modified()
-                .ok()
-                .and_then(|modified| SystemTime::now().duration_since(modified).ok())
-                .map(|age| age > DEBUG_LOG_RETENTION)
-                .unwrap_or(false);
+    if let Ok(mut file) = OpenOptions::new().read(true).open(AP_DEBUG_LOG_PATH) {
+        let mut existing = Vec::new();
+        let _ = Read::by_ref(&mut file)
+            .take(MAX_DEBUG_LOG_SIZE.saturating_add(1))
+            .read_to_end(&mut existing);
+        reset = existing.len() as u64 + record.len() as u64 > MAX_DEBUG_LOG_SIZE;
     }
     if reset {
         let _ = OpenOptions::new()

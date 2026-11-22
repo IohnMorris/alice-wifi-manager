@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::Path;
 
 pub const WPA_CONF_PATH: &str = "/bkupgrade/data/wpa_supplicant.conf";
 pub const WPA_CONF_BAK_PATH: &str = "/bkupgrade/data/wpa_supplicant.conf.bak";
@@ -50,8 +49,8 @@ impl WpaConfigFile {
                 // Резервная копия создаётся только один раз, если её ещё нет.
                 let _ = Self::backup_current();
             } else {
-                let main = fs::read(WPA_CONF_PATH).unwrap_or_default();
-                let backup = fs::read(WPA_CONF_BAK_PATH).unwrap_or_default();
+                let main = Self::read_bounded(WPA_CONF_PATH).unwrap_or_default();
+                let backup = Self::read_bounded(WPA_CONF_BAK_PATH).unwrap_or_default();
                 if main != backup {
                     // .bak содержит последнюю подтверждённую версию. Основной
                     // файл может быть переписан старым runtime-состоянием
@@ -79,14 +78,20 @@ impl WpaConfigFile {
         fresh.save_atomic()
     }
 
-    fn is_file_structurally_valid(path: &str) -> bool {
-        let Ok(metadata) = fs::metadata(Path::new(path)) else {
-            return false;
-        };
-        if metadata.len() > MAX_CONFIG_BYTES {
-            return false;
+    fn read_bounded(path: &str) -> Result<String, String> {
+        let file = fs::File::open(path).map_err(|e| format!("Failed to open {}: {}", path, e))?;
+        let mut bytes = Vec::new();
+        file.take(MAX_CONFIG_BYTES.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .map_err(|e| format!("Failed to read {}: {}", path, e))?;
+        if bytes.len() as u64 > MAX_CONFIG_BYTES {
+            return Err(format!("Wi-Fi config exceeds {} bytes", MAX_CONFIG_BYTES));
         }
-        let Ok(content) = fs::read_to_string(Path::new(path)) else {
+        String::from_utf8(bytes).map_err(|e| format!("Wi-Fi config is not valid UTF-8: {}", e))
+    }
+
+    fn is_file_structurally_valid(path: &str) -> bool {
+        let Ok(content) = Self::read_bounded(path) else {
             return false;
         };
         let trimmed = content.trim();
@@ -101,34 +106,32 @@ impl WpaConfigFile {
 
     /// Создаёт резервную копию `/bkupgrade/data/wpa_supplicant.conf.bak`.
     pub fn backup_current() -> Result<(), String> {
-        if Path::new(WPA_CONF_PATH).exists() {
-            fs::copy(WPA_CONF_PATH, WPA_CONF_BAK_PATH)
-                .map_err(|e| format!("Failed to create .bak copy: {}", e))?;
-            let _ = fs::set_permissions(WPA_CONF_BAK_PATH, fs::Permissions::from_mode(0o600));
+        match fs::copy(WPA_CONF_PATH, WPA_CONF_BAK_PATH) {
+            Ok(_) => {
+                let _ = fs::set_permissions(WPA_CONF_BAK_PATH, fs::Permissions::from_mode(0o600));
+                Ok(())
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("Failed to create .bak copy: {}", error)),
         }
-        Ok(())
     }
 
     /// Восстанавливает рабочую конфигурацию из `.bak` при откате транзакции.
     pub fn restore_from_backup() -> Result<(), String> {
-        if Path::new(WPA_CONF_BAK_PATH).exists() {
-            fs::copy(WPA_CONF_BAK_PATH, WPA_CONF_PATH)
-                .map_err(|e| format!("Failed to restore from .bak: {}", e))?;
-            let _ = fs::set_permissions(WPA_CONF_PATH, fs::Permissions::from_mode(0o600));
+        match fs::copy(WPA_CONF_BAK_PATH, WPA_CONF_PATH) {
+            Ok(_) => {
+                let _ = fs::set_permissions(WPA_CONF_PATH, fs::Permissions::from_mode(0o600));
+                Ok(())
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("Failed to restore from .bak: {}", error)),
         }
-        Ok(())
     }
 
     /// Парсит `/bkupgrade/data/wpa_supplicant.conf`.
     pub fn load() -> Result<Self, String> {
         Self::ensure_valid_or_restore()?;
-        let metadata = fs::metadata(WPA_CONF_PATH)
-            .map_err(|e| format!("Failed to stat {}: {}", WPA_CONF_PATH, e))?;
-        if metadata.len() > MAX_CONFIG_BYTES {
-            return Err(format!("Wi-Fi config exceeds {} bytes", MAX_CONFIG_BYTES));
-        }
-        let content = fs::read_to_string(WPA_CONF_PATH)
-            .map_err(|e| format!("Failed to read {}: {}", WPA_CONF_PATH, e))?;
+        let content = Self::read_bounded(WPA_CONF_PATH)?;
 
         let mut header_lines = Vec::new();
         let mut networks = Vec::new();
