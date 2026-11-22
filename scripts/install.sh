@@ -35,6 +35,7 @@ TRANSACTION="$PACKAGE_DIR/transaction-install.sh"
 [ -s "$TRANSACTION" ] || TRANSACTION="$PACKAGE_DIR/scripts/transaction-install.sh"
 test -s "$TRANSACTION" || { echo "Missing transaction installer" >&2; exit 1; }
 ssh "$USER@$HOST" "umask 077; mkdir '$REMOTE'"
-scp "$MANAGER" "$WPA" "$INIT" "$TRANSACTION" "$USER@$HOST:$REMOTE/"
+# Mini 2 has SSH but no sftp-server; force legacy SCP protocol.
+scp -O "$MANAGER" "$WPA" "$INIT" "$TRANSACTION" "$USER@$HOST:$REMOTE/"
 ssh "$USER@$HOST" "sh '$REMOTE/transaction-install.sh' '$REMOTE' '$STAMP'"
 echo "Installation completed. Recovery copy: /bkupgrade/data/recovery-$STAMP"

@@ -30,7 +30,8 @@ $target = "$User@$HostName"
 
 & ssh $target "umask 077; mkdir '$remote'"
 if ($LASTEXITCODE -ne 0) { throw "Unable to create remote staging directory" }
-& scp $files.manager $files.wpa $files.init $files.transaction "$target`:$remote/"
+# Mini 2 has SSH but no sftp-server; force legacy SCP protocol.
+& scp -O $files.manager $files.wpa $files.init $files.transaction "$target`:$remote/"
 if ($LASTEXITCODE -ne 0) { throw "Package upload failed" }
 & ssh $target "sh '$remote/transaction-install.sh' '$remote' '$stamp'"
 if ($LASTEXITCODE -ne 0) { throw "Transactional installation failed; recovery was retained on the device" }
